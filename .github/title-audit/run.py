@@ -116,13 +116,14 @@ def main():
     parser.add_argument("--label", default="main")
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--linux", action="store_true")
+    parser.add_argument("--skip", nargs="*", default=["PPSA99169"])
     parser.add_argument("titles", nargs="*")
     args = parser.parse_args()
     names = json.loads((HERE / "nid_names.json").read_text())
     rows = []
     for record in sorted(catalog(args.cache / "records"), key=lambda r: r["titleid"]):
         tid = record["titleid"]
-        if args.titles and tid not in args.titles:
+        if (args.titles and tid not in args.titles) or tid in args.skip:
             continue
         row = {"title": tid, "name": record.get("name"), "label": args.label}
         zip_path, problem = archive(record, args.cache)
