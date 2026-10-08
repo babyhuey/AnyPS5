@@ -128,13 +128,14 @@ def main():
         zip_path, problem = archive(record, args.cache)
         if problem:
             rows.append({**row, "stop": f"skipped: {problem}"})
-            print(tid, row["stop"], flush=True)
+            print(tid, rows[-1]["stop"], flush=True)
             continue
         work = args.work / args.label / tid
         try:
             prepare(zip_path, work)
         except Exception as error:
             rows.append({**row, "stop": f"skipped: {error}"})
+            print(tid, rows[-1]["stop"], flush=True)
             continue
         app = work / ("app.elf" if args.linux else "app.exe")
         command = [str(args.relinker)] + ([] if args.linux else ["--windows"]) + ["--rpath", str(args.libs.resolve()).replace("\\", "/"), str(work / "src" / "eboot.elf"), str(app)]
