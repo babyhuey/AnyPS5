@@ -147,15 +147,15 @@ void APS5_VABI exit_nid_postfix(int code) {
     LibcExit_nid_no_patch(code);
 }
 
-[[noreturn]] void APS5_VABI _exit_nid_postfix(int status) {
-    std::_Exit(status);
-}
-
 int APS5_VABI waitpid_nid_postfix(int pid, int* status, int options) {
     (void)pid;
     (void)status;
     *__error_nid_postfix() = (static_cast<unsigned>(options) & ~freebsdWaitOptions) != 0 ? errnoInvalidArgument : errnoNoChild;
     return -1;
+}
+
+[[noreturn]] void APS5_VABI _exit_nid_postfix(int status) {
+    std::_Exit(status);
 }
 
 int APS5_VABI sceKernelGetCurrentCpu(void) {
