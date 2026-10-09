@@ -168,9 +168,32 @@ static std::int64_t NativePread(int descriptor, void* buf, std::size_t nbytes, s
 static std::int64_t NativePwrite(int descriptor, const void* buf, std::size_t nbytes, std::int64_t offset) {
     return NativePositioned_nid_no_patch(descriptor, const_cast<void*>(buf), nbytes, offset, true);
 }
+static int NativeFstatfs(int descriptor, KernelStatfs* sb) {
+    const auto path = NativeDescriptorPath(descriptor);
+    if (!path) return -1;
+    std::wstring volume(MAX_PATH + 1, L'\0');
+    DWORD sectorsPerCluster = 0, bytesPerSector = 0, freeClusters = 0, totalClusters = 0, maximumComponent = 0;
+    ULARGE_INTEGER available{}, total{}, free{};
+    if (!::GetVolumePathNameW(path->c_str(), volume.data(), static_cast<DWORD>(volume.size()))
+        || !::GetDiskFreeSpaceW(volume.c_str(), &sectorsPerCluster, &bytesPerSector, &freeClusters, &totalClusters)
+        || !::GetDiskFreeSpaceExW(volume.c_str(), &available, &total, &free)
+        || !::GetVolumeInformationW(volume.c_str(), nullptr, 0, nullptr, &maximumComponent, nullptr, nullptr, 0)) {
+        errno = EIO;
+        return -1;
+    }
+    const std::uint64_t cluster = static_cast<std::uint64_t>(sectorsPerCluster) * bytesPerSector;
+    sb->f_bsize = cluster;
+    sb->f_iosize = cluster;
+    sb->f_blocks = total.QuadPart / cluster;
+    sb->f_bfree = free.QuadPart / cluster;
+    sb->f_bavail = static_cast<std::int64_t>(available.QuadPart / cluster);
+    sb->f_namemax = maximumComponent;
+    return 0;
+}
 #else
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/file.h>
 #include <sys/time.h>
 #include <dirent.h>
@@ -211,6 +234,19 @@ static std::int64_t NativePread(int descriptor, void* buf, std::size_t nbytes, s
 }
 static std::int64_t NativePwrite(int descriptor, const void* buf, std::size_t nbytes, std::int64_t offset) {
     return static_cast<std::int64_t>(::pwrite(descriptor, buf, nbytes, static_cast<off_t>(offset)));
+}
+static int NativeFstatfs(int descriptor, KernelStatfs* sb) {
+    struct statvfs native{};
+    if (::fstatvfs(descriptor, &native) != 0) return -1;
+    sb->f_bsize = native.f_frsize;
+    sb->f_iosize = native.f_bsize;
+    sb->f_blocks = native.f_blocks;
+    sb->f_bfree = native.f_bfree;
+    sb->f_bavail = static_cast<std::int64_t>(native.f_bavail);
+    sb->f_files = native.f_files;
+    sb->f_ffree = static_cast<std::int64_t>(native.f_favail);
+    sb->f_namemax = static_cast<std::uint32_t>(native.f_namemax);
+    return 0;
 }
 static_assert(sizeof(KernelIovec) == sizeof(struct iovec));
 static_assert(offsetof(KernelIovec, base) == offsetof(struct iovec, iov_base));
@@ -753,6 +789,16 @@ int APS5_VABI futimes_nid_postfix(int d, const KernelTimeval* times) {
         }
     }
     if (NativeFutimes(d, times) != 0) return PosixResult(SceErrorFromErrno(errno));
+    return 0;
+}
+
+int APS5_VABI _fstatfs_nid_postfix(int d, KernelStatfs* buf) {
+    if (d >= GuestSockets::FirstDescriptor) return PosixFailure(GuestSockets::IsOpen(d) ? GUEST_EINVAL : GUEST_EBADF);
+    if (buf == nullptr) return PosixFailure(GUEST_EFAULT);
+    KernelStatfs result{};
+    result.f_version = 0x20030518;
+    if (NativeFstatfs(d, &result) != 0) return PosixResult(SceErrorFromErrno(errno));
+    *buf = result;
     return 0;
 }
 

@@ -30,6 +30,7 @@ int APS5_VABI _open_nid_postfix(const char*, int, ...);
 int APS5_VABI close_nid_postfix(int);
 int APS5_VABI stat_nid_postfix(const char*, FileStat*);
 int APS5_VABI lstat_nid_postfix(const char*, FileStat*);
+int APS5_VABI _fstatfs_nid_postfix(int, KernelStatfs*);
 int APS5_VABI unlink_nid_postfix(const char*);
 int APS5_VABI rmdir_nid_postfix(const char*);
 int APS5_VABI mkdir_nid_postfix(const char*, unsigned short);
@@ -134,6 +135,17 @@ int main() {
 #endif
     Require(descriptor >= 0 && sceKernelFsync(descriptor) == 0);
     Require(fdatasync_nid_postfix(descriptor) == 0);
+    KernelStatfs volume{};
+    Require(_fstatfs_nid_postfix(descriptor, &volume) == 0);
+    Require(volume.f_version == 0x20030518 && volume.f_bsize > 0 && volume.f_namemax > 0);
+    Require(volume.f_blocks >= volume.f_bfree && volume.f_bavail >= 0 && static_cast<std::uint64_t>(volume.f_bavail) <= volume.f_bfree);
+    Require(volume.f_bsize * volume.f_blocks == std::filesystem::space(root).capacity);
+    Require(_fstatfs_nid_postfix(descriptor, nullptr) == -1 && *__error_nid_postfix() == 14);
+    const int directory = open_nid_postfix(root.string().c_str(), 0, 0);
+    KernelStatfs directoryVolume{};
+    Require(directory >= 0 && _fstatfs_nid_postfix(directory, &directoryVolume) == 0);
+    Require(directoryVolume.f_blocks == volume.f_blocks && directoryVolume.f_bsize == volume.f_bsize);
+    Require(close_nid_postfix(directory) == 0);
     const auto ownerWrite = [&] {
         return (std::filesystem::status(sized).permissions() & std::filesystem::perms::owner_write) != std::filesystem::perms::none;
     };
@@ -157,6 +169,7 @@ int main() {
     Require(fchmod_nid_postfix(descriptor, 0600) == -1 && *__error_nid_postfix() == 9);
     Require(futimes_nid_postfix(descriptor, nullptr) == -1 && *__error_nid_postfix() == 9);
     Require(fdatasync_nid_postfix(descriptor) == -1 && *__error_nid_postfix() == 9);
+    Require(_fstatfs_nid_postfix(descriptor, &volume) == -1 && *__error_nid_postfix() == 9);
 #endif
     const int socket = socket_nid_postfix(2, 2, 0);
     Require(socket >= 0);
@@ -164,6 +177,7 @@ int main() {
     Require(fchmod_nid_postfix(socket, 0600) == -1 && *__error_nid_postfix() == 22);
     Require(futimes_nid_postfix(socket, nullptr) == -1 && *__error_nid_postfix() == 22);
     Require(fdatasync_nid_postfix(socket) == -1 && *__error_nid_postfix() == 22);
+    Require(_fstatfs_nid_postfix(socket, &volume) == -1 && *__error_nid_postfix() == 22);
     Require(close_nid_postfix(socket) == 0);
     Require(fchmod_nid_postfix(socket, 0600) == -1 && *__error_nid_postfix() == 9);
     Require(futimes_nid_postfix(socket, nullptr) == -1 && *__error_nid_postfix() == 9);
