@@ -175,6 +175,8 @@ int main() {
     Require(inetAddr("0x7f.0.0.0x1", {127, 0, 0, 1}));
     Require(inetAddr("0.0.0.0", {0, 0, 0, 0}));
     Require(inetAddr("255.255.255.255", {255, 255, 255, 255}));
+    Require(inetAddr("4294967296", {0, 0, 0, 0}));
+    Require(inetAddr("18446744073709551617", {0, 0, 0, 1}));
     char first[] = ",a,,b,";
     char second[] = "x:y";
     char* firstState = nullptr;
