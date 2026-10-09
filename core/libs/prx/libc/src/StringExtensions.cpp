@@ -1,6 +1,7 @@
 #include "prx/libc/include/general/VabiMacros.hpp"
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <cerrno>
 #include <string_view>
@@ -128,6 +129,14 @@ int APS5_VABI __inet_aton_nid_postfix(const char* text, void* address) {
 std::uint32_t APS5_VABI __inet_addr_nid_postfix(const char* text) {
     std::uint32_t address;
     return __inet_aton_nid_postfix(text, &address) ? address : 0xffffffff;
+}
+
+char* APS5_VABI __inet_ntoa_nid_postfix(std::uint32_t address) {
+    static char text[18];
+    unsigned char bytes[4];
+    std::memcpy(bytes, &address, sizeof(bytes));
+    std::snprintf(text, sizeof(text), "%u.%u.%u.%u", bytes[0], bytes[1], bytes[2], bytes[3]);
+    return text;
 }
 
 }

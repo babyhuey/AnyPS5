@@ -29,6 +29,7 @@ int APS5_VABI snprintf_s_nid_postfix(char*, std::size_t, const char*, ...);
 int APS5_VABI sscanf_s_nid_postfix(const char*, const char*, ...);
 int APS5_VABI __inet_aton_nid_postfix(const char*, void*);
 std::uint32_t APS5_VABI __inet_addr_nid_postfix(const char*);
+char* APS5_VABI __inet_ntoa_nid_postfix(std::uint32_t);
 }
 
 static void Require(bool condition) {
@@ -177,6 +178,11 @@ int main() {
     Require(inetAddr("255.255.255.255", {255, 255, 255, 255}));
     Require(inetAddr("4294967296", {0, 0, 0, 0}));
     Require(inetAddr("18446744073709551617", {0, 0, 0, 1}));
+    char* const ntoa = __inet_ntoa_nid_postfix(__inet_addr_nid_postfix("192.0.2.42"));
+    Require(std::strcmp(ntoa, "192.0.2.42") == 0);
+    Require(std::strcmp(__inet_ntoa_nid_postfix(0), "0.0.0.0") == 0);
+    Require(__inet_ntoa_nid_postfix(0xffffffff) == ntoa && std::strcmp(ntoa, "255.255.255.255") == 0);
+    Require(std::strcmp(__inet_ntoa_nid_postfix(__inet_addr_nid_postfix("10.1.2")), "10.1.0.2") == 0);
     char first[] = ",a,,b,";
     char second[] = "x:y";
     char* firstState = nullptr;
