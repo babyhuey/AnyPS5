@@ -232,6 +232,15 @@ static_assert(offsetof(ModuleInfoEx, eh_frame_hdr_addr) == 0x148);
 static_assert(offsetof(ModuleInfoEx, segments) == 0x160);
 static_assert(sizeof(ModuleInfoEx) == 0x1A8);
 
+struct ModuleInfo {
+    std::uint64_t st_size;
+    char name[256];
+    ModuleSegmentInfo segments[4];
+    std::uint32_t segment_count;
+    std::uint8_t fingerprint[20];
+};
+static_assert(sizeof(ModuleInfo) == 0x160);
+
 struct ModuleInfoForUnwind {
     std::uint64_t st_size;
     char name[256];

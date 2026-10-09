@@ -1,10 +1,13 @@
+#include <algorithm>
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include "SceTypes.hpp"
 #include "prx/libc/include/General.hpp"
 #include "prx/libkernel/KernelErrors.hpp"
@@ -152,6 +155,27 @@ int FindImage(dl_phdr_info* image, std::size_t, void* data) {
     search.found = true;
     return 1;
 }
+
+std::vector<std::uintptr_t> ImageAddresses() {
+    std::vector<std::uintptr_t> addresses;
+    dl_iterate_phdr([](dl_phdr_info* image, std::size_t, void* data) {
+        for (std::uint16_t i = 0; i < image->dlpi_phnum; ++i) {
+            if (image->dlpi_phdr[i].p_type != PT_LOAD) continue;
+            static_cast<std::vector<std::uintptr_t>*>(data)->push_back(image->dlpi_addr + image->dlpi_phdr[i].p_vaddr);
+            break;
+        }
+        return 0;
+    }, &addresses);
+    return addresses;
+}
+
+std::optional<KernelModule> ModuleIdForAddress(std::uintptr_t address) {
+    Dl_info symbol{};
+    link_map* native = nullptr;
+    if (!dladdr1(reinterpret_cast<const void*>(address), &symbol, reinterpret_cast<void**>(&native), RTLD_DL_LINKMAP) || !native)
+        return std::nullopt;
+    return ModuleIdForImage_nid_no_patch(native);
+}
 #endif
 
 }
@@ -180,6 +204,49 @@ int APS5_VABI sceKernelGetModuleInfoFromAddr(std::uint64_t address, int flags, M
     result.id = ModuleIdForImage_nid_no_patch(native);
     *info = result;
     return 0;
+#endif
+}
+
+int APS5_VABI sceKernelGetModuleList(KernelModule* array, std::size_t numArray, std::size_t* actualNum) {
+    if (!array || !actualNum) return SCE_KERNEL_ERROR_EFAULT;
+#ifdef _WIN32
+    (void)numArray;
+    NotImplemented_nid_no_patch(__func__);
+    return 0;
+#else
+    std::vector<KernelModule> handles;
+    for (const auto address : ImageAddresses())
+        if (const auto handle = ModuleIdForAddress(address)) handles.push_back(*handle);
+    if (handles.size() > numArray) NotImplemented_nid_no_patch("sceKernelGetModuleList with an array shorter than the module list");
+    std::copy(handles.begin(), handles.end(), array);
+    *actualNum = handles.size();
+    return 0;
+#endif
+}
+
+int APS5_VABI sceKernelGetModuleInfo(KernelModule handle, ModuleInfo* info) {
+    if (!info) return SCE_KERNEL_ERROR_EFAULT;
+    if (info->st_size != sizeof(ModuleInfo)) return SCE_KERNEL_ERROR_EINVAL;
+#ifdef _WIN32
+    (void)handle;
+    NotImplemented_nid_no_patch(__func__);
+    return 0;
+#else
+    for (const auto address : ImageAddresses()) {
+        if (ModuleIdForAddress(address) != handle) continue;
+        ModuleInfoEx full{};
+        ImageSearch search{address, &full, false};
+        dl_iterate_phdr(FindImage, &search);
+        if (!search.found) break;
+        ModuleInfo result{};
+        result.st_size = sizeof(ModuleInfo);
+        std::memcpy(result.name, full.name, sizeof(result.name));
+        std::memcpy(result.segments, full.segments, sizeof(result.segments));
+        result.segment_count = full.segment_count;
+        *info = result;
+        return 0;
+    }
+    return SCE_KERNEL_ERROR_ESRCH;
 #endif
 }
 
