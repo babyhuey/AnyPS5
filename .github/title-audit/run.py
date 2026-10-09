@@ -158,8 +158,9 @@ def main():
         relink = subprocess.run(command, cwd=work, capture_output=True, text=True)
         (work / "relink.log").write_text(relink.stdout + relink.stderr)
         if relink.returncode != 0:
-            last = (relink.stderr or relink.stdout).strip().splitlines()[-1:] or ["?"]
-            rows.append({**row, "stop": f"relink failed: {last[0][:200]}"})
+            output = (relink.stdout + relink.stderr).strip().splitlines()
+            failure = next((line for line in output if line.startswith("FAIL")), output[-1] if output else "?")
+            rows.append({**row, "stop": f"relink failed: {failure[:200]}"})
             print(tid, rows[-1]["stop"], flush=True)
             continue
         for module_dir in MODULE_DIRS:
