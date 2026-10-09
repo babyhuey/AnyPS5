@@ -69,6 +69,8 @@ def prepare(zip_path, work):
             relative = name[len(root):]
             top = relative.split("/", 1)[0]
             target = work / ("src" if top in MODULE_DIRS else "app0") / relative
+            if not target.resolve().is_relative_to(work.resolve()):
+                raise ValueError(f"zip entry outside the work folder: {name}")
             if relative.lower() == "eboot.bin":
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +78,15 @@ def prepare(zip_path, work):
         data = z.read(eboot)
     elf = data if data[:4] == b"\x7fELF" else unself.unwrap(data)[0]
     (work / "src" / "eboot.elf").write_bytes(elf)
+
+
+MINGW_RUNTIME = ("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+
+
+def add_runtime(libs, mingw_bin):
+    for name in MINGW_RUNTIME:
+        if not (libs / name).exists():
+            shutil.copy2(mingw_bin / name, libs / name)
 
 
 def run(app, cwd, timeout, log):
@@ -117,9 +128,13 @@ def main():
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--linux", action="store_true")
     parser.add_argument("--skip", nargs="*", default=["PPSA99169"])
+    parser.add_argument("--mingw-bin", type=Path, help="WinLibs mingw64\\bin; defaults to the directory of g++ on PATH")
     parser.add_argument("titles", nargs="*")
     args = parser.parse_args()
     names = json.loads((HERE / "nid_names.json").read_text())
+    if not args.linux:
+        mingw_bin = args.mingw_bin or Path(shutil.which("g++") or "").parent
+        add_runtime(args.libs, mingw_bin)
     rows = []
     for record in sorted(catalog(args.cache / "records"), key=lambda r: r["titleid"]):
         tid = record["titleid"]
