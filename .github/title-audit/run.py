@@ -19,6 +19,7 @@ import unself
 
 CATALOG = "blackbearreloaded/ps5-homebrew-catalog"
 MODULE_DIRS = ("sce_module", "sce_modules", "prx")
+SELF_MAGIC = (b"\x4f\x15\x3d\x1d", b"\x54\x14\xf5\xee")
 STOP = re.compile(r"FAIL:|Failed to load module|NotImplemented|not implemented|terminate called|symbol lookup error|unresolved|Unhandled|exception", re.I)
 NID = re.compile(r"(?<![A-Za-z0-9+\-])[A-Za-z0-9+\-]{11}(?![A-Za-z0-9+\-])")
 
@@ -74,7 +75,10 @@ def prepare(zip_path, work):
             if relative.lower() == "eboot.bin":
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(z.read(name))
+            content = z.read(name)
+            if top in MODULE_DIRS and content[:4] in SELF_MAGIC:
+                content = unself.unwrap(content)[0]
+            target.write_bytes(content)
         data = z.read(eboot)
     elf = data if data[:4] == b"\x7fELF" else unself.unwrap(data)[0]
     (work / "src" / "eboot.elf").write_bytes(elf)
