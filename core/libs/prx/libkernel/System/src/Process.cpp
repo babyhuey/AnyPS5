@@ -237,6 +237,13 @@ int APS5_VABI waitpid_nid_postfix(int pid, int* status, int options) {
     return -1;
 }
 
+int APS5_VABI execvp_nid_postfix(const char* file, char* const* arguments) {
+    (void)file;
+    (void)arguments;
+    NotImplemented_nid_no_patch("execvp: executable replacement");
+    return -1;
+}
+
 int APS5_VABI sceKernelGetCurrentCpu(void) {
 #ifdef _WIN32
     PROCESSOR_NUMBER processor{};
