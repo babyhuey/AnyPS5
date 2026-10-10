@@ -191,6 +191,11 @@ char* APS5_VABI asctime_nid_postfix(const GuestTm* timeptr) {
     return std::asctime(&host);
 }
 
+char* APS5_VABI ctime_nid_postfix(const int64_t* timer) {
+    const GuestTm* local = localtime_nid_postfix(timer);
+    return local != nullptr ? asctime_nid_postfix(local) : nullptr;
+}
+
 size_t APS5_VABI strftime_nid_postfix(char* str, size_t count, const char* format, const GuestTm* timeptr) {
     return libc_strftime_nid_postfix(str, count, format, timeptr);
 }

@@ -205,6 +205,11 @@ int APS5_VABI fseek_nid_postfix(FileStream* stream, std::int64_t offset, int ori
     return fseeko_nid_postfix(stream, offset, origin);
 }
 
+void APS5_VABI rewind_nid_postfix(FileStream* stream) {
+    fseeko_nid_postfix(stream, 0, SEEK_SET);
+    stream->ClearError();
+}
+
 std::int64_t APS5_VABI ftell_nid_postfix(FileStream* stream) { return ftello_nid_postfix(stream); }
 
 int APS5_VABI fgetpos_nid_postfix(FileStream* stream, std::int64_t* position) {

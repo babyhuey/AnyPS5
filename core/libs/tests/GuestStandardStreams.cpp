@@ -4,6 +4,8 @@
 #include <cstring>
 #include <cstdarg>
 #include <cstdint>
+#include <ctime>
+#include <string>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -41,6 +43,10 @@ char* APS5_VABI fgets_nid_postfix(char*, int, FileStream*);
 int APS5_VABI feof_nid_postfix(FileStream*);
 int APS5_VABI fileno_nid_postfix(FileStream*);
 void APS5_VABI clearerr_nid_postfix(FileStream*);
+void APS5_VABI rewind_nid_postfix(FileStream*);
+char* APS5_VABI ctime_nid_postfix(const std::int64_t*);
+std::tm* APS5_VABI localtime_nid_postfix(const std::int64_t*);
+char* APS5_VABI asctime_nid_postfix(const std::tm*);
 int APS5_VABI setvbuf_nid_postfix(FileStream*, char*, int, std::size_t);
 void APS5_VABI setbuf_nid_postfix(FileStream*, char*);
 FileStream* APS5_VABI fdopen_nid_postfix(int, const char*);
@@ -169,6 +175,9 @@ int main() {
         1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 1.25L) == 25);
     Require(std::strcmp(stringOutput, "1 2 3 4 5 6 7 8 9 10 1.25") == 0);
     Require(FormatString(stringOutput, "") == 0 && stringOutput[0] == '\0');
+    const std::int64_t moment = 1700000000;
+    std::string expectedTime = asctime_nid_postfix(localtime_nid_postfix(&moment));
+    Require(expectedTime.size() == 25 && expectedTime.back() == '\n' && expectedTime == ctime_nid_postfix(&moment));
     Require(__isthreaded_nid_postfix == 1);
     Require(__stdoutp_nid_postfix == &_Stdout_nid_postfix);
     Require(__stderrp_nid_postfix == &_Stderr_nid_postfix);
@@ -195,6 +204,9 @@ int main() {
     Require(std::strcmp(text, "B\n") == 0);
     Require(fgetc_nid_postfix(&stream) == EOF);
     Require(feof_nid_postfix(&stream) && (guest.flags & 0x20));
+    rewind_nid_postfix(&stream);
+    Require(!feof_nid_postfix(&stream) && fgetc_nid_postfix(&stream) == 'A');
+    Require(fgetc_nid_postfix(&stream) == '\n' && fgetc_nid_postfix(&stream) == EOF && feof_nid_postfix(&stream));
     clearerr_nid_postfix(&stream);
     Require(!feof_nid_postfix(&stream) && !(guest.flags & 0x20));
     stream.Close();
