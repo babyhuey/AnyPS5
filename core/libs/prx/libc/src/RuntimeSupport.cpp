@@ -133,6 +133,14 @@ void APS5_VABI _Unlockfilelock_nid_postfix(FileStream* stream) {
 #endif
 }
 
+void APS5_VABI flockfile_nid_postfix(FileStream* stream) {
+    _Lockfilelock_nid_postfix(stream);
+}
+
+void APS5_VABI funlockfile_nid_postfix(FileStream* stream) {
+    _Unlockfilelock_nid_postfix(stream);
+}
+
 std::uint64_t APS5_VABI _Stoul_nid_postfix(const char* str, char** endptr, int base) {
     if (StopAtBinaryPrefix_nid_no_patch(str, endptr, base)) return 0;
     return std::strtoull(str, endptr, base);
