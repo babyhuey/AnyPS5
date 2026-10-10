@@ -14,6 +14,7 @@ int APS5_VABI scePthreadAttrInit(PthreadAttr* attr);
 int APS5_VABI scePthreadAttrDestroy(PthreadAttr* attr);
 int APS5_VABI scePthreadAttrGetaffinity(const PthreadAttr* attr, KernelCpumask* mask);
 int APS5_VABI cpuset_getaffinity_nid_postfix(int level, int which, std::int64_t id, std::size_t size, void* mask);
+int APS5_VABI cpuset_setaffinity_nid_postfix(int level, int which, std::int64_t id, std::size_t size, const void* mask);
 int* APS5_VABI __error_nid_postfix();
 }
 
@@ -38,6 +39,22 @@ static void* APS5_VABI ReportCpuset(void* arg) {
     result[5] = cpuset_getaffinity_nid_postfix(3, 1, -1, 4, set) == -1 && *__error_nid_postfix() == 34;
     result[6] = cpuset_getaffinity_nid_postfix(3, 1, -1, 33, set) == -1 && *__error_nid_postfix() == 34;
     result[7] = cpuset_getaffinity_nid_postfix(3, 1, -1, 8, nullptr) == -1 && *__error_nid_postfix() == 14;
+    return nullptr;
+}
+
+static void* APS5_VABI ChangeCpuset(void* arg) {
+    auto* result = static_cast<std::uint64_t*>(arg);
+    std::uint64_t set[4] = {1, 0, 0, 0};
+    std::uint64_t read[4] = {};
+    result[0] = cpuset_setaffinity_nid_postfix(3, 1, -1, sizeof(set), set) == 0;
+    result[1] = cpuset_getaffinity_nid_postfix(3, 1, -1, sizeof(read), read) == 0 && read[0] == 1 && read[1] == 0;
+    result[2] = cpuset_setaffinity_nid_postfix(3, 1, -1, 4, set) == -1 && *__error_nid_postfix() == 34;
+    result[3] = cpuset_setaffinity_nid_postfix(3, 1, -1, 8, nullptr) == -1 && *__error_nid_postfix() == 14;
+    std::uint64_t empty[1] = {0};
+    result[4] = cpuset_setaffinity_nid_postfix(3, 1, -1, sizeof(empty), empty) == -1 && *__error_nid_postfix() == 11;
+    std::uint64_t high[2] = {1, 1};
+    result[5] = cpuset_setaffinity_nid_postfix(3, 1, -1, sizeof(high), high) == -1 && *__error_nid_postfix() == 22;
+    result[6] = cpuset_getaffinity_nid_postfix(3, 1, -1, 8, read) == 0 && read[0] == 1;
     return nullptr;
 }
 
@@ -86,5 +103,10 @@ int main() {
     Require(cpuset[0] == 0 && cpuset[1] == available && cpuset[2] == ~0ull);
     Require(cpuset[3] == 0 && cpuset[4] == available);
     Require(cpuset[5] == 1 && cpuset[6] == 1 && cpuset[7] == 1);
+
+    std::uint64_t changed[7] = {};
+    Require(scePthreadCreate(&thread, &attr, ChangeCpuset, changed, nullptr) == SCE_OK);
+    Require(scePthreadJoin(thread, nullptr) == SCE_OK);
+    for (const std::uint64_t check : changed) Require(check == 1);
     Require(scePthreadAttrDestroy(&attr) == SCE_OK);
 }
