@@ -37,6 +37,7 @@ static constexpr int VIDEO_OUT_ERROR_FLIP_QUEUE_FULL = -2144796654;
 static constexpr int VIDEO_OUT_ERROR_UNSUPPORTED_OUTPUT_MODE = -2144796650;
 static constexpr int VIDEO_OUT_ERROR_UNAVAILABLE_OUTPUT_MODE = -2144796647;
 static constexpr int VIDEO_OUT_ERROR_INVALID_EVENT = -2144796659;
+static constexpr int VIDEO_OUT_ERROR_UNKNOWN_OUTPUT_MODE = -2144796642;
 
 static constexpr int VIDEO_OUT_BUS_TYPE_MAIN = 0;
 static constexpr int VIDEO_OUT_BUS_TYPE_OVERLAY = 1;
@@ -74,6 +75,7 @@ static constexpr int VIDEO_OUT_EVENT_FLIP = 0;
 static constexpr int VIDEO_OUT_EVENT_VBLANK = 1;
 static constexpr int VIDEO_OUT_EVENT_PRE_VBLANK_START = 2;
 static constexpr int VIDEO_OUT_EVENT_SET_MODE = 8;
+static constexpr int VIDEO_OUT_EVENT_VRR_STATUS = 16;
 
 static constexpr int VIDEO_OUT_FLIP_MODE_VSYNC = 1;
 static constexpr int VIDEO_OUT_FLIP_MODE_VSYNC_MULTI = 4;
@@ -116,6 +118,7 @@ struct VideoOutConfig {
     std::vector<EventRegistration> vblankEvents;
     std::vector<EventRegistration> preVblankEvents;
     std::vector<EventRegistration> outputModeEvents;
+    std::vector<EventRegistration> vrrStatusEvents;
 
     uint32_t width = VIDEO_OUT_DEFAULT_WIDTH;
     uint32_t height = VIDEO_OUT_DEFAULT_HEIGHT;
@@ -199,6 +202,7 @@ public:
     bool Close(int handle);
     std::shared_ptr<VideoOutConfig> GetConfig(int handle);
     bool IsOpen(int handle);
+    bool HasConfig(int handle);
 
     // 0, or VIDEO_OUT_ERROR_FLIP_QUEUE_FULL when the title has VIDEO_OUT_FLIP_QUEUE_CAPACITY flips pending.
     int SubmitFlip(int handle, int index, int flipMode, int64_t flipArg);

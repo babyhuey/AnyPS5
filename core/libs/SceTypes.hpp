@@ -199,11 +199,50 @@ struct FileStat {
     KernelTimespec st_birthtim;
 };
 
+struct KernelStatfs {
+    std::uint32_t f_version;
+    std::uint32_t f_type;
+    std::uint64_t f_flags;
+    std::uint64_t f_bsize;
+    std::uint64_t f_iosize;
+    std::uint64_t f_blocks;
+    std::uint64_t f_bfree;
+    std::int64_t f_bavail;
+    std::uint64_t f_files;
+    std::int64_t f_ffree;
+    std::uint64_t f_syncwrites;
+    std::uint64_t f_asyncwrites;
+    std::uint64_t f_syncreads;
+    std::uint64_t f_asyncreads;
+    std::uint64_t f_spare[10];
+    std::uint32_t f_namemax;
+    std::uint32_t f_owner;
+    std::int32_t f_fsid[2];
+    char f_charspare[80];
+    char f_fstypename[16];
+    char f_mntfromname[88];
+    char f_mntonname[88];
+};
+static_assert(sizeof(KernelStatfs) == 472);
+
 struct ModuleSegmentInfo {
     std::uint64_t address;
     std::uint32_t size;
     std::int32_t prot;
 };
+
+struct ModuleInfo {
+    std::uint64_t st_size;
+    char name[256];
+    ModuleSegmentInfo segments[4];
+    std::uint32_t segment_count;
+    std::uint8_t fingerprint[20];
+};
+static_assert(offsetof(ModuleInfo, name) == 0x8);
+static_assert(offsetof(ModuleInfo, segments) == 0x108);
+static_assert(offsetof(ModuleInfo, segment_count) == 0x148);
+static_assert(offsetof(ModuleInfo, fingerprint) == 0x14C);
+static_assert(sizeof(ModuleInfo) == 0x160);
 
 struct ModuleInfoEx {
     std::uint64_t st_size;
@@ -532,6 +571,13 @@ struct Audio3dOpenParameters {
     std::uint32_t buffer_mode;
     std::uint32_t pad;
     std::uint32_t num_beds;
+};
+
+struct Audio3dAttribute {
+    std::uint32_t attribute_id;
+    std::uint32_t pad;
+    const void* value;
+    std::uint64_t value_size;
 };
 
 using AudioPropagationHandle = std::uint64_t;
@@ -1826,6 +1872,19 @@ struct VideoOutOutputStatus {
     std::uint64_t flags = 0;
     std::uint64_t reserved[3] = {};
 };
+
+struct VideoOutResolutionStatus {
+    std::uint32_t fullWidth = 0;
+    std::uint32_t fullHeight = 0;
+    std::uint32_t paneWidth = 0;
+    std::uint32_t paneHeight = 0;
+    std::uint64_t refreshRate = 0;
+    float screenSizeInInch = 0.0f;
+    std::uint16_t flags = 0;
+    std::uint16_t reserved0 = 0;
+    std::uint32_t reserved1[3] = {};
+};
+static_assert(sizeof(VideoOutResolutionStatus) == 48 && offsetof(VideoOutResolutionStatus, refreshRate) == 16 && offsetof(VideoOutResolutionStatus, screenSizeInInch) == 24);
 
 struct VideoOutOutputOptions { std::uint32_t internalData[16] = {}; };
 

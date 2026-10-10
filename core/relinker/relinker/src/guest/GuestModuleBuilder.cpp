@@ -31,7 +31,7 @@ std::vector<std::string> ReadNeededNames(const Domain::SysVDynamicSection& dynam
 
 }
 
-std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path& inputPath, const std::filesystem::path& outputPath, Domain::SysVDynamicSection& dynamic, const bool windows, const bool toIntel, ISyscallScanner& syscallScanner, const bool lazyBinding, const std::string& runPath, const std::set<std::string>& excludedModules) const {
+std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path& inputPath, const std::filesystem::path& outputPath, Domain::SysVDynamicSection& dynamic, const bool windows, const bool macos, const bool toIntel, ISyscallScanner& syscallScanner, const bool lazyBinding, const std::string& runPath, const std::set<std::string>& excludedModules) const {
     const auto root = std::filesystem::absolute(inputPath).parent_path();
     const auto singular = root / "sce_module";
     const auto plural = root / "sce_modules";
@@ -85,17 +85,60 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
         }
         for (const auto& [name, path] : found) paths.push_back(path);
     }
+    Io::FileReader reader;
+    std::map<std::filesystem::path, GuestImage> discovered;
+    const auto matchesIdentity = [](const std::string& name, const std::vector<std::string>& identities) {
+        return std::any_of(identities.begin(), identities.end(), [&](const auto& identity) {
+            return name == identity || name == identity + ".prx" || name == identity + ".sprx" || name == identity + ".suprx";
+        });
+    };
+    const auto foldFilename = [](std::string name) {
+        for (auto& character : name) if (character >= 'A' && character <= 'Z') character = static_cast<char>(character + ('a' - 'A'));
+        return name;
+    };
+    for (const auto& path : paths) discovered.emplace(path, GuestImageReader().Read(path, reader.Read(path.string())));
+    std::set<std::string> unresolved;
+    for (const auto& name : missingNeeded) {
+        if (std::none_of(discovered.begin(), discovered.end(), [&](const auto& entry) {
+            const auto& [path, image] = entry;
+            return path.filename().string() == name || image.Soname == name ||
+                (windows && foldFilename(path.filename().string()) == foldFilename(name)) || matchesIdentity(name, image.ModuleNames);
+        })) unresolved.insert(name);
+    }
+    if (!unresolved.empty()) {
+        std::map<std::string, std::filesystem::path> identities;
+        for (auto it = std::filesystem::recursive_directory_iterator(root); it != std::filesystem::recursive_directory_iterator(); ++it) {
+            if (it->is_directory() && std::find(directories.begin(), directories.end(), it->path()) != directories.end()) {
+                it.disable_recursion_pending();
+                continue;
+            }
+            const auto& path = it->path();
+            const auto extension = path.extension().string();
+            if (!it->is_regular_file() || (extension != ".prx" && extension != ".sprx" && extension != ".suprx") ||
+                path.filename().string().ends_with(GuestModuleSuffix) || excludedModules.contains(path.filename().string()) || discovered.contains(path) || !isElf(path)) continue;
+            const auto names = GuestImageReader().ReadModuleNames(reader.Read(path.string()));
+            for (const auto& name : unresolved) {
+                if (!matchesIdentity(name, names)) continue;
+                if (!identities.emplace(name, path).second) throw Domain::RelinkerException("Ambiguous needed module identity: " + name);
+            }
+        }
+        for (const auto& [name, path] : identities) {
+            if (discovered.contains(path)) continue;
+            discovered.emplace(path, GuestImageReader().Read(path, reader.Read(path.string())));
+            paths.push_back(path);
+        }
+    }
     if (!unmatchedExclusions.empty()) throw Domain::RelinkerException("Excluded guest module file not found: " + *unmatchedExclusions.begin());
     std::sort(paths.begin(), paths.end());
+    paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
     if (paths.empty()) return {};
     if (lazyBinding) throw Domain::RelinkerException("Guest modules require eager binding; --lazy-binding is incompatible");
     std::vector<GuestImage> images;
     std::map<std::string, std::vector<std::size_t>> exports;
     std::map<std::string, std::set<std::size_t>> sharedExports;
     std::set<std::string> outputNames;
-    Io::FileReader reader;
     for (const auto& path : paths) {
-        auto image = GuestImageReader().Read(path, reader.Read(path.string()));
+        auto image = std::move(discovered.at(path));
         if (image.OutputName.find_first_of("$\r\n") != std::string::npos) throw Domain::RelinkerException("Unsupported guest filename: " + image.OutputName);
         std::string folded = image.OutputName;
         if (windows) {
@@ -128,10 +171,6 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
     }
     std::map<std::string, std::size_t> guestNames;
     std::map<std::string, std::size_t> windowsGuestFiles;
-    const auto foldFilename = [](std::string name) {
-        for (auto& character : name) if (character >= 'A' && character <= 'Z') character = static_cast<char>(character + ('a' - 'A'));
-        return name;
-    };
     for (std::size_t index = 0; index < images.size(); ++index) {
         for (const auto& name : {images[index].SourcePath.filename().string(), images[index].Soname}) {
             if (name.empty()) continue;
@@ -146,6 +185,19 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
         const auto file = windowsGuestFiles.find(foldFilename(name));
         return file == windowsGuestFiles.end() ? guestNames.end() : guestNames.emplace(name, file->second).first;
     };
+    const auto resolveIdentity = [&](const std::string& name) {
+        if (findGuest(name) != guestNames.end()) return;
+        std::size_t match = images.size();
+        for (std::size_t index = 0; index < images.size(); ++index) {
+            const auto& identities = images[index].ModuleNames;
+            if (!matchesIdentity(name, identities)) continue;
+            if (match != images.size()) throw Domain::RelinkerException("Ambiguous guest module identity: " + name);
+            match = index;
+        }
+        if (match != images.size()) guestNames.emplace(name, match);
+    };
+    for (const auto& name : missingNeeded) resolveIdentity(name);
+    for (const auto& image : images) for (const auto& name : image.Dependencies) resolveIdentity(name);
     const auto rejectSharedImport = [&](const std::string& name, const std::string& importer) {
         const auto shared = sharedExports.find(name);
         if (shared == sharedExports.end()) return;
@@ -171,6 +223,7 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
         if (!windows && exports.contains(name)) rename(dynamic.DynSymData, dynamic.DynStrData, offset / 24, name);
     }
     std::vector<std::set<std::size_t>> dependencies(images.size());
+    std::vector<std::set<std::size_t>> systemImports(images.size());
     for (auto& image : images) {
         image.UsePlatformTlsResolver = !windows ? !exports.contains("vNe1w4diLCs") : std::none_of(image.Symbols.begin(), image.Symbols.end(), [](const auto& symbol) {
             return symbol.Name == "vNe1w4diLCs" && symbol.Section != 0 && symbol.Section != AbsoluteSection && (symbol.Info >> 4) != 0 && symbol.Visibility != 1 && symbol.Visibility != 2;
@@ -181,7 +234,8 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
             const auto found = findGuest(name);
             if (found != guestNames.end() && found->second != index) dependencies[index].insert(found->second);
         }
-        for (const auto& symbol : images[index].Symbols) {
+        for (std::size_t symbolIndex = 0; symbolIndex < images[index].Symbols.size(); ++symbolIndex) {
+            const auto& symbol = images[index].Symbols[symbolIndex];
             if (symbol.Section != 0 || symbol.Name.empty()) continue;
             rejectSharedImport(symbol.Name, images[index].SourcePath.string());
             const auto found = exports.find(symbol.Name);
@@ -199,6 +253,7 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
                 if (exported == provider.Symbols.end() || ((symbol.Info & 15) != 0 && (symbol.Info & 15) != (exported->Info & 15))) throw Domain::RelinkerException("Guest import/export type mismatch: " + symbol.Name);
                 if (providers.front() != index) dependencies[index].insert(providers.front());
             } else if (windows && (symbol.Info & 15) == 6) throw Domain::RelinkerException("Windows guest TLS import requires a guest TLS export: " + symbol.Name);
+            if (providers.empty()) systemImports[index].insert(symbolIndex);
         }
     }
     if (!windows) {
@@ -267,15 +322,24 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
                 needed.push_back("$ORIGIN/" + dependencyPath.lexically_relative(image.SourcePath.parent_path()).generic_string());
             }
             needed.insert(needed.end(), hostLibraries.begin(), hostLibraries.end());
-            output = Elfpatcher::GuestModuleWriter().WriteLinux(image, needed, guestRunPath);
+            output = macos ? Elfpatcher::GuestModuleWriter().WriteMacOs(image, needed, guestRunPath) : Elfpatcher::GuestModuleWriter().WriteLinux(image, needed, guestRunPath);
         }
         if (windows) {
             for (const auto& [name, provider] : guestNames) {
                 if (provider == index && std::find(runtime.Names.begin(), runtime.Names.end(), name) == runtime.Names.end()) runtime.Names.push_back(name);
             }
         }
+        std::vector<Domain::CallRegistryEntry> imports;
+        for (const auto* table : {&image.Dynamic.RelaData, &image.Dynamic.RelaPltData}) {
+            for (std::size_t position = 0; position < table->size(); position += 24) {
+                const auto symbolIndex = static_cast<std::size_t>(Io::ReadU64(*table, position + 8) >> 32);
+                if (!systemImports[index].contains(symbolIndex)) continue;
+                const auto& symbol = image.Symbols[symbolIndex];
+                imports.push_back({symbol.Name, symbol.Library, {}, 0, {}, Io::ReadU64(*table, position), {}, false});
+            }
+        }
         dynamic.GuestModules.push_back(std::move(runtime));
-        artifacts.push_back({target, std::move(output)});
+        artifacts.push_back({target, std::move(output), std::move(imports)});
     }
     return artifacts;
 }

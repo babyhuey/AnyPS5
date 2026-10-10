@@ -342,10 +342,12 @@ bool VideoOutDriver::close(int handle) {
     removeEvents(cfg->vblankEvents, VIDEO_OUT_EVENT_VBLANK);
     removeEvents(cfg->preVblankEvents, VIDEO_OUT_EVENT_PRE_VBLANK_START);
     removeEvents(cfg->outputModeEvents, VIDEO_OUT_EVENT_SET_MODE);
+    removeEvents(cfg->vrrStatusEvents, VIDEO_OUT_EVENT_VRR_STATUS);
     cfg->flipEvents.clear();
     cfg->vblankEvents.clear();
     cfg->preVblankEvents.clear();
     cfg->outputModeEvents.clear();
+    cfg->vrrStatusEvents.clear();
     cfg->vblankCond.notify_all();
     flipQueue->changed.notify_all();
     return true;
@@ -367,6 +369,17 @@ std::shared_ptr<VideoOutConfig> VideoOutDriver::GetConfig(int handle) {
 
 bool VideoOutDriver::IsOpen(int handle) {
     return GetConfig(handle) != nullptr;
+}
+
+bool VideoOutDriver::HasConfig(int handle) {
+    std::shared_ptr<VideoOutConfig> cfg;
+    {
+        std::lock_guard lock(mutex);
+        if (handle <= 0 || handle >= VIDEO_OUT_NUM_MAX || contexts[handle] == nullptr) return false;
+        cfg = contexts[handle];
+    }
+    std::lock_guard cfgLock(cfg->mutex);
+    return cfg->opened && !cfg->closing;
 }
 
 int VideoOutDriver::SubmitFlip(int handle, int index, int flipMode, int64_t flipArg) {
@@ -574,7 +587,12 @@ void VideoOutDriver::presentLoop(std::stop_token token, std::promise<void>& star
             cancelled.swap(flipQueue->requests);
         }
     }
-    AgcDriverShutdown_nid_postfix();
+    try {
+        AgcDriverShutdown_nid_postfix();
+    } catch (...) {
+        std::lock_guard lock(flipQueue->mutex);
+        if (!flipQueue->failure) flipQueue->failure = std::current_exception();
+    }
     window.Destroy();
 }
 

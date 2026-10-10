@@ -193,7 +193,8 @@ VkStencilOpState stencilFace(std::uint32_t compare, std::uint32_t ops, std::uint
 }
 
 void decodeDepth(const Registers& cx, std::uint32_t depthControl, State& result) {
-    zero(cx, 0x000, 0x00001f9fu, "depth/stencil clear, copy, resummarize or decompress draws (DB_RENDER_CONTROL)");
+    zero(cx, 0x000, 0x00001f9du, "depth clear, copy, resummarize or decompress draws (DB_RENDER_CONTROL)");
+    const bool stencilClear = (read(cx, 0x000) & 2u) != 0;
     const auto view = read(cx, 0x002);
     zero(cx, 0x002, 0x3c000000u, "depth mips (DB_DEPTH_VIEW MIP_LEVEL)");
     zero(cx, 0x010, 0x000f100cu, "multisampled, partially resident or mipmapped depth (DB_Z_INFO)");
@@ -209,6 +210,7 @@ void decodeDepth(const Registers& cx, std::uint32_t depthControl, State& result)
     };
     const bool depthReadOnly = (view & 0x01000000u) != 0;
     const bool stencilReadOnly = (view & 0x02000000u) != 0;
+    Require(!stencilClear || (stencil && !stencilReadOnly), "stencil clear requires a writable stencil plane");
     DepthTarget depth{};
     depth.address = zFormat != 0 ? base(0x012, 0x01a) : 0;
     depth.stencilAddress = stencil ? base(0x013, 0x01b) : 0;
@@ -234,7 +236,19 @@ void decodeDepth(const Registers& cx, std::uint32_t depthControl, State& result)
         result.maxDepthBounds = readFloat(cx, 0x009);
     }
     result.stencilTest = (depthControl & 1u) != 0;
-    if (result.stencilTest) {
+    if (stencilClear) {
+        VkStencilOpState clear{};
+        clear.failOp = VK_STENCIL_OP_REPLACE;
+        clear.passOp = VK_STENCIL_OP_REPLACE;
+        clear.depthFailOp = VK_STENCIL_OP_REPLACE;
+        clear.compareOp = VK_COMPARE_OP_ALWAYS;
+        clear.compareMask = 0xffu;
+        clear.writeMask = 0xffu;
+        clear.reference = depth.clearStencil;
+        result.stencilTest = true;
+        result.stencilFront = clear;
+        result.stencilBack = clear;
+    } else if (result.stencilTest) {
         const auto ops = read(cx, 0x10b);
         result.stencilFront = stencilFace((depthControl >> 8u) & 7u, ops, read(cx, 0x10c), stencilReadOnly);
         result.stencilBack = (depthControl & 0x80u) != 0 ? stencilFace((depthControl >> 20u) & 7u, ops >> 12u, read(cx, 0x10d), stencilReadOnly) : result.stencilFront;
@@ -514,7 +528,9 @@ State DecodeState(const QueueState& queue) {
     zero(cx, 0x207, ~LayerExports, "clip distances, layer, viewport or auxiliary vertex exports");
     {
         const auto depthControl = read(cx, 0x200);
-        if ((depthControl & 0xbu) != 0 && depthSurfaceBound(cx)) {
+        const auto renderControl = find(cx, 0x000);
+        const bool stencilClear = renderControl != cx.end() && (renderControl->second & 2u) != 0;
+        if (stencilClear || ((depthControl & 0xbu) != 0 && depthSurfaceBound(cx))) {
             decodeDepth(cx, depthControl, result);
         } else if (depthPassThrough(depthControl) || ((depthControl & 3u) != 0 && depthPlanesAbsent(cx))) {
             static bool reported = false;
@@ -591,9 +607,11 @@ State DecodeState(const QueueState& queue) {
         if (!written(slot)) continue;
         // Export formats only matter for the targets the draw writes.
         const auto slotExport = (exportFormat >> (4u * index)) & 0xfu;
-        if (slotExport == 0 || slotExport == 7 || slotExport == 8 || slotExport > 9) throw std::runtime_error("AGC graphics: color export format " + std::to_string(slotExport) + " is unsupported");
+        if (slotExport == 0 || slotExport == 8 || slotExport > 9) throw std::runtime_error("AGC graphics: color export format " + std::to_string(slotExport) + " is unsupported");
         auto color = DecodeColorBuffer(cx, slot);
+        if (slotExport == 7 && ((read(cx, 0x31c + slot * 0xfu) >> 8u) & 7u) != 4u) throw std::runtime_error("AGC graphics: color export format 7 (UINT16_ABGR) into a target that is not unsigned integer is unsupported");
         color.exportIndex = index;
+        color.uintExport = slotExport == 7;
         APS5_LOG_OUT_DEBUG("Color %u address=0x%llx extent=%ux%u bytes=%llu VkFormat=%u", slot, static_cast<unsigned long long>(color.address), color.extent.width, color.extent.height, static_cast<unsigned long long>(color.bytes), static_cast<unsigned>(color.format));
         if (result.colors.empty()) {
             result.renderExtent = color.extent;
@@ -651,6 +669,7 @@ State DecodeState(const QueueState& queue) {
         }
         state.blendEnable = (blend >> 30u) & 1u;
         if (state.blendEnable && (mapping == 0x1bu || mapping == 0x93u)) throw std::runtime_error("AGC graphics: blending into a color target with a reversed component order is not implemented");
+        Require(!state.blendEnable || !color.uintExport, "blending into an unsigned integer target is unsupported");
         if (state.blendEnable) {
             Require((read(cx, 0x31c + slot * 0xfu) & 0x10000u) == 0, "blend bypass conflicts with enabled blending");
             state.srcColorBlendFactor = blendFactor(blend & 0x1fu);
@@ -846,7 +865,13 @@ std::string DrawRejection(const QueueState& queue, bool indexed) {
     }
     if (auto reason = nonzero(cx, 0x207, ~LayerExports, "clip distances, layer, viewport or auxiliary vertex exports"); !reason.empty()) return reason;
     if (value(cx, 0x200, word)) {
-        const bool surface = (word & 0xbu) != 0 && depthSurfaceBound(cx);
+        const auto renderControl = find(cx, 0x000);
+        const bool stencilClear = renderControl != cx.end() && (renderControl->second & 2u) != 0;
+        if (stencilClear) {
+            std::uint32_t stencil = 0, view = 0;
+            if ((value(cx, 0x011, stencil) && (stencil & 1u) == 0) || (value(cx, 0x002, view) && (view & 0x02000000u) != 0)) return require(false, "stencil clear requires a writable stencil plane");
+        }
+        const bool surface = ((word & 0xbu) != 0 || stencilClear) && depthSurfaceBound(cx);
         if (!surface && !((word & 3u) != 0 && depthPlanesAbsent(cx)) && !depthPassThrough(word) && !IgnoreDepthTest() && (effectiveDepthControl(word) & DepthControlMask) != 0) return zeroMessage(0x200, word, "depth, stencil or conditional color writes");
         if (auto reason = require((word & 8u) == 0 || surface, "depth bounds without a depth surface"); !reason.empty()) return reason;
         if (auto reason = require((word & 0xc0000000u) == 0, "depth-conditional color writes are unsupported"); !reason.empty()) return reason;

@@ -13,6 +13,9 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <initializer_list>
 #include <string>
 #include <limits>
@@ -232,10 +235,10 @@ void testControls() {
     check(handle >= 0, "open with the highest priority on every CPU failed");
     const auto cfg = VideoOutDriver::Get().GetConfig(handle);
     check(sceVideoOutIsOutputSupported(handle, VIDEO_OUT_OUTPUT_MODE_DEFAULT, nullptr, nullptr, 0) == 1, "default output mode is unsupported");
-    for (const uint64_t unsupported : std::initializer_list<uint64_t>{VIDEO_OUT_OUTPUT_MODE_119_88HZ, 0xd000000aull}) {
-        check(sceVideoOutIsOutputSupported(handle, unsupported, nullptr, nullptr, 0) == 0, "unavailable output mode is supported");
-        check(sceVideoOutConfigureOutput(handle, unsupported, nullptr, nullptr, 0) == VIDEO_OUT_ERROR_UNAVAILABLE_OUTPUT_MODE, "unavailable output mode was configured");
-    }
+    check(sceVideoOutIsOutputSupported(handle, VIDEO_OUT_OUTPUT_MODE_119_88HZ, nullptr, nullptr, 0) == VIDEO_OUT_ERROR_UNSUPPORTED_OUTPUT_MODE, "unavailable output mode is supported");
+    check(sceVideoOutConfigureOutput(handle, VIDEO_OUT_OUTPUT_MODE_119_88HZ, nullptr, nullptr, 0) == VIDEO_OUT_ERROR_UNSUPPORTED_OUTPUT_MODE, "unavailable output mode was configured");
+    check(sceVideoOutIsOutputSupported(handle, 0xd000000aull, nullptr, nullptr, 0) == VIDEO_OUT_ERROR_UNKNOWN_OUTPUT_MODE, "unknown output mode is supported");
+    check(sceVideoOutConfigureOutput(handle, 0xd000000aull, nullptr, nullptr, 0) == VIDEO_OUT_ERROR_UNKNOWN_OUTPUT_MODE, "unknown output mode was configured");
     check(sceVideoOutConfigureOutput(handle, VIDEO_OUT_OUTPUT_MODE_DEFAULT, nullptr, nullptr, 0) == 0, "default output mode was rejected");
     for (int rate = 0; rate <= 2; ++rate) {
         check(sceVideoOutSetFlipRate(handle, rate) == 0 && cfg->flipRate == rate, "flip rate was not applied");
@@ -256,6 +259,11 @@ void testControls() {
         std::lock_guard lock(cfg->mutex);
         check(cfg->vblankEvents.size() == 1, "duplicate vblank subscription");
     }
+    check(sceVideoOutAddVrrActiveStatusEvent(queue, handle, &settings) == 0, "VRR status subscription failed");
+    {
+        std::lock_guard lock(cfg->mutex);
+        check(cfg->vrrStatusEvents.size() == 1, "VRR status subscription was not recorded");
+    }
     check(sceVideoOutWaitVblank(handle) == 0, "vblank wait failed");
     check(owner->GetTriggeredEvents(&event, 1) == 1 && event.udata == &settings && sceVideoOutGetEventId(&event) == VIDEO_OUT_EVENT_VBLANK, "vblank event or updated user data missing");
     std::vector<std::byte> allocation(65536 + 65535);
@@ -267,6 +275,11 @@ void testControls() {
     attribute.pixel_format = 0x8000000000000000ull;
     check(sceVideoOutRegisterBuffers2(handle, 0, 0, &buffer, 1, &attribute, 0, nullptr) == 0, "buffers with set reserved pointers were rejected");
     check(sceVideoOutUnregisterBuffers(handle, 0) == 0, "buffer unregistration failed");
+    check(owner->GetTriggeredEvents(&event, 1) == 0, "VRR status event triggered without a VRR change");
+    KernelEvent vrrStatus{};
+    vrrStatus.ident = VIDEO_OUT_EVENT_VRR_STATUS;
+    vrrStatus.filter = EVFILT_VIDEO_OUT;
+    check(sceVideoOutGetEventId(&vrrStatus) == VIDEO_OUT_EVENT_VRR_STATUS, "VRR status event id rejected");
     sceVideoOutClose(handle);
     check(owner->GetTriggeredEvents(&event, 1) == 0, "closed port retained pending events");
     check(sceKernelDeleteEqueue(queue) == 0, "event queue deletion failed");
@@ -532,6 +545,8 @@ void testOneDevice() {
 
 int main(int argc, char** argv) {
     try {
+        std::filesystem::create_directories("app0/sce_sys");
+        std::ofstream("app0/sce_sys/param.json", std::ios::binary) << R"({"titleId":"PPSA00000","localizedParameters":{"en-US":{"titleName":"Example"}},"downloadDataSize":0})";
         if (argc == 2 && std::string(argv[1]) == "decode") testDecode();
         else if (argc == 2 && std::string(argv[1]) == "controls") testControls();
         else if (argc == 2 && std::string(argv[1]) == "present") testPresentation();
@@ -548,6 +563,10 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "%s\n", error.what());
         try { LibcRunShutdown_nid_postfix(); }
         catch (const std::exception& shutdown) { std::fprintf(stderr, "shutdown: %s\n", shutdown.what()); }
+        if (std::string(error.what()).find("Vulkan support") != std::string::npos && !std::getenv("ANYPS5_REQUIRE_DISPLAY")) {
+            std::printf("skipped, no display or Vulkan device: %s\n", error.what());
+            return 77;
+        }
         return 1;
     }
 }
