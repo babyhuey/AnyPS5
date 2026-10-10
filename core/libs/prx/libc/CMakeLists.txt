@@ -29,6 +29,7 @@ target_sources(libc PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/RuntimeSupport.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/LocaleSupport.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Process.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/Hostname.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Environment.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Directory.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Filesystem.cpp
@@ -187,6 +188,16 @@ if(BUILD_TESTING)
     add_test(NAME guest_environment COMMAND guest_environment_tests)
     if(WIN32)
         set_tests_properties(guest_environment PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
+    endif()
+    add_test_executable(guest_hostname_tests ${LIBS_INCLUDE_DIR}/tests/GuestHostname.cpp)
+    target_include_directories(guest_hostname_tests PRIVATE ${LIBS_INCLUDE_DIR})
+    target_link_libraries(guest_hostname_tests PRIVATE libc)
+    configure_windows_unwind(guest_hostname_tests)
+    add_test(NAME guest_hostname COMMAND guest_hostname_tests)
+    set_tests_properties(guest_hostname PROPERTIES TIMEOUT 20)
+    if(WIN32)
+        set_tests_properties(guest_hostname PROPERTIES ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
     endif()
     add_test_executable(guest_lifecycle_tests ${LIBS_INCLUDE_DIR}/tests/GuestLifecycle.cpp)
