@@ -155,7 +155,7 @@ int UmtxDeadline(const void* sizeArgument, const void* timeArgument, std::option
 }
 
 template <class TValue>
-int UmtxWait(void* object, TValue expected, const void* sizeArgument, const void* timeArgument, const void* caller) {
+int UmtxWait(void* object, std::uint64_t expected, const void* sizeArgument, const void* timeArgument, const void* caller) {
     std::optional<std::uint64_t> deadline;
     if (const int error = UmtxDeadline(sizeArgument, timeArgument, deadline); error != 0) {
         return error;
@@ -166,7 +166,10 @@ int UmtxWait(void* object, TValue expected, const void* sizeArgument, const void
     if (!IsAlignedAddress<TValue>(reinterpret_cast<std::uintptr_t>(object))) {
         APS5_INVALID_ARG_EX;
     }
-    return WaitOnAddressUntil(static_cast<TValue*>(object), expected, deadline, caller) ? 0 : GUEST_ETIMEDOUT;
+    if (expected > std::numeric_limits<TValue>::max()) {
+        return 0;
+    }
+    return WaitOnAddressUntil(static_cast<TValue*>(object), static_cast<TValue>(expected), deadline, caller) ? 0 : GUEST_ETIMEDOUT;
 }
 
 int UmtxWake(void* object, std::uint64_t count, bool isPrivate) {
@@ -240,7 +243,7 @@ int APS5_VABI _umtx_op_nid_postfix(void* object, int operation, std::uint64_t va
             break;
         case UMTX_OP_WAIT_UINT:
         case UMTX_OP_WAIT_UINT_PRIVATE:
-            error = UmtxWait<std::uint32_t>(object, static_cast<std::uint32_t>(value), sizeArgument, timeArgument, caller);
+            error = UmtxWait<std::uint32_t>(object, value, sizeArgument, timeArgument, caller);
             break;
         case UMTX_OP_WAKE:
         case UMTX_OP_WAKE_PRIVATE:
@@ -249,7 +252,9 @@ int APS5_VABI _umtx_op_nid_postfix(void* object, int operation, std::uint64_t va
         default:
             if (operation < 0 || operation >= UMTX_OP_MAX) {
                 error = GUEST_EINVAL;
-            } else if (operation <= UMTX_OP_RESERVED1) {
+            } else if (operation == UMTX_OP_RESERVED1) {
+                NotImplemented_nid_no_patch("_umtx_op operation 1");
+            } else if (operation < UMTX_OP_RESERVED1) {
                 error = GUEST_EOPNOTSUPP;
             } else {
                 NotImplemented_nid_no_patch(("_umtx_op operation " + std::to_string(operation)).c_str());
