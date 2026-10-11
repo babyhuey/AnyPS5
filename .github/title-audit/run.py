@@ -173,6 +173,11 @@ def main():
         for module_dir in MODULE_DIRS:
             if (work / "src" / module_dir).is_dir() and not (work / "app0" / module_dir).exists():
                 shutil.copytree(work / "src" / module_dir, work / "app0" / module_dir)
+        # libSceSysmodule opens libs/<name>.prx relative to the working directory.
+        if os.name == "nt":
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(work / "libs"), str(args.libs.resolve())], capture_output=True, check=True)
+        else:
+            (work / "libs").symlink_to(args.libs.resolve(), target_is_directory=True)
         if args.linux:
             app.chmod(0o755)
         state, seconds = run(app, work, args.timeout, work / "run.log")
