@@ -48,7 +48,10 @@ def archive(record, cache):
         return None, f"release is not a zip: {url or 'none'}"
     path = cache / f"{record['titleid']}.zip"
     if not path.exists():
-        data = fetch(url)
+        try:
+            data = fetch(url)
+        except OSError as error:
+            return None, f"download failed: {error}"
         if hashlib.sha256(data).hexdigest() != record.get("sha256"):
             return None, "sha256 mismatch"
         path.write_bytes(data)
