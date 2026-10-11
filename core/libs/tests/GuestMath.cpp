@@ -56,6 +56,10 @@ int APS5_VABI __isinff_nid_postfix(float);
 int APS5_VABI __isinf_nid_postfix(double);
 std::lldiv_t APS5_VABI lldiv_nid_postfix(long long, long long);
 std::lldiv_t APS5_VABI ldiv_nid_postfix(std::int64_t, std::int64_t);
+std::int64_t APS5_VABI random_nid_postfix();
+void APS5_VABI srandom_nid_postfix(std::uint64_t);
+char* APS5_VABI initstate_nid_postfix(std::uint64_t, char*, std::int64_t);
+char* APS5_VABI setstate_nid_postfix(char*);
 }
 static void Require(bool value) { if (!value) std::abort(); }
 
@@ -213,6 +217,53 @@ static void CheckFloatClassification() {
     Require(_FDtest_nid_postfix(reinterpret_cast<const float*>(&_FNan_nid_postfix)) == 2);
 }
 
+static void RequireRandom(std::initializer_list<std::int64_t> expected) {
+    for (const std::int64_t value : expected) Require(random_nid_postfix() == value);
+}
+
+static void CheckRandom() {
+    RequireRandom({1408992891, 1638182910, 83848093, 145962118});
+    srandom_nid_postfix(1);
+    RequireRandom({1408992891, 1638182910, 83848093, 145962118});
+    srandom_nid_postfix(12345);
+    RequireRandom({1052984060, 1639322404, 1971525204, 2097956667});
+    srandom_nid_postfix(0x1ffffffffull);
+    RequireRandom({1839440857, 166262882});
+
+    static std::uint32_t small[2];
+    Require(initstate_nid_postfix(7, reinterpret_cast<char*>(small), 7) == nullptr);
+
+    static std::uint32_t buffers[5][64];
+    const std::int64_t sizes[5] = {8, 32, 64, 128, 256};
+    const std::int64_t first[5][4] = {
+        {283378125, 1764918282, 1937450016, 427896257},
+        {1271472800, 27686551, 1252069488, 1609001632},
+        {694272427, 11698535, 2124174862, 1483454323},
+        {661205498, 1595046935, 1838407547, 2126818740},
+        {1836092019, 614294141, 830724836, 1030076134}};
+    for (int type = 0; type < 5; ++type) {
+        char* previous = initstate_nid_postfix(7, reinterpret_cast<char*>(buffers[type]), sizes[type]);
+        if (type > 0) Require(previous == reinterpret_cast<char*>(buffers[type - 1]));
+        Require(buffers[type][0] == static_cast<std::uint32_t>(type));
+        for (const std::int64_t value : first[type]) Require(random_nid_postfix() == value);
+    }
+
+    static std::uint32_t degree7[8], degree31[32];
+    initstate_nid_postfix(7, reinterpret_cast<char*>(degree31), 128);
+    initstate_nid_postfix(7, reinterpret_cast<char*>(degree7), 32);
+    RequireRandom({1271472800, 27686551, 1252069488});
+    Require(setstate_nid_postfix(reinterpret_cast<char*>(degree31)) == reinterpret_cast<char*>(degree7));
+    Require(degree7[0] == 5 * 3 + 1);
+    RequireRandom({661205498, 1595046935});
+    Require(setstate_nid_postfix(reinterpret_cast<char*>(degree7)) == reinterpret_cast<char*>(degree31));
+    Require(degree31[0] == 5 * 2 + 3);
+    RequireRandom({1609001632});
+
+    static std::uint32_t corrupt[2] = {5 * 31 + 3, 0};
+    Require(setstate_nid_postfix(reinterpret_cast<char*>(corrupt)) == nullptr);
+    RequireRandom({28873941});
+}
+
 int main() {
     CheckFloatClassification();
     CheckIntegerConversions();
@@ -296,4 +347,5 @@ int main() {
     Require(negativeDenominator.quot == -3 && negativeDenominator.rem == 1);
     const auto minimum = div_nid_postfix(std::numeric_limits<int>::min(), 10);
     Require(minimum.quot == -214748364 && minimum.rem == -8);
+    CheckRandom();
 }

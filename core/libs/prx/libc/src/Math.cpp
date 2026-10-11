@@ -141,4 +141,112 @@ void APS5_VABI srand_nid_postfix(unsigned int seed) {
     g_randState = seed;
 }
 
+static constexpr int RandomTypes = 5;
+static constexpr int RandomDegrees[RandomTypes] = {0, 7, 15, 31, 63};
+static constexpr int RandomSeparations[RandomTypes] = {0, 3, 1, 3, 1};
+
+static std::mutex g_randomLock;
+static std::uint32_t g_randomTable[32] = {
+    3,
+    0x2cf41758, 0x27bb3711, 0x4916d4d1, 0x7b02f59f, 0x9b8e28eb, 0xc0e80269,
+    0x696f5c16, 0x878f1ff5, 0x52d9c07f, 0x916a06cd, 0xb50b3a20, 0x2776970a,
+    0xee4eb2a6, 0xe94640ec, 0xb1d65612, 0x9d1ed968, 0x1043f6b7, 0xa3432a76,
+    0x17eacbb9, 0x3c09e2eb, 0x04f8c2b3, 0x708a1f57, 0xee341814, 0x95d0e4d2,
+    0xb06f216c, 0x8bd2e72e, 0x8f7c38d7, 0xcfc6a8fc, 0x02a59495, 0xa20d2a69,
+    0xe29d12d1};
+
+struct RandomGenerator {
+    std::uint32_t* state;
+    std::uint32_t* front;
+    std::uint32_t* rear;
+    std::uint32_t* end;
+    int type;
+    int degree;
+    int separation;
+};
+
+static RandomGenerator g_random = {g_randomTable + 1, g_randomTable + 4, g_randomTable + 1, g_randomTable + 32, 3, 31, 3};
+
+static std::uint32_t GoodRandom(std::uint32_t context) {
+    const std::int64_t x = static_cast<std::int64_t>(context % 0x7ffffffeu) + 1;
+    std::int64_t next = 16807 * (x % 127773) - 2836 * (x / 127773);
+    if (next < 0) next += 0x7fffffff;
+    return static_cast<std::uint32_t>(next - 1);
+}
+
+static std::uint32_t NextRandom() {
+    if (g_random.type == 0) return g_random.state[0] = GoodRandom(g_random.state[0]);
+    *g_random.front += *g_random.rear;
+    const std::uint32_t result = *g_random.front >> 1;
+    if (++g_random.front >= g_random.end) {
+        g_random.front = g_random.state;
+        ++g_random.rear;
+    } else if (++g_random.rear >= g_random.end) {
+        g_random.rear = g_random.state;
+    }
+    return result;
+}
+
+static void SeedRandom(std::uint64_t seed) {
+    g_random.state[0] = static_cast<std::uint32_t>(seed);
+    int rounds = 50;
+    if (g_random.type != 0) {
+        for (int i = 1; i < g_random.degree; ++i) g_random.state[i] = GoodRandom(g_random.state[i - 1]);
+        g_random.front = g_random.state + g_random.separation;
+        g_random.rear = g_random.state;
+        rounds = 10 * g_random.degree;
+    }
+    for (int i = 0; i < rounds; ++i) NextRandom();
+}
+
+static void SaveRandomPosition() {
+    g_random.state[-1] = g_random.type == 0 ? 0 : static_cast<std::uint32_t>(RandomTypes * (g_random.rear - g_random.state) + g_random.type);
+}
+
+std::int64_t APS5_VABI random_nid_postfix() {
+    std::lock_guard lock(g_randomLock);
+    return NextRandom();
+}
+
+void APS5_VABI srandom_nid_postfix(std::uint64_t seed) {
+    std::lock_guard lock(g_randomLock);
+    SeedRandom(seed);
+}
+
+char* APS5_VABI initstate_nid_postfix(std::uint64_t seed, char* buffer, std::int64_t size) {
+    std::lock_guard lock(g_randomLock);
+    if (size < 8) return nullptr;
+    char* previous = reinterpret_cast<char*>(g_random.state - 1);
+    SaveRandomPosition();
+    const int type = size < 32 ? 0 : size < 64 ? 1 : size < 128 ? 2 : size < 256 ? 3 : 4;
+    g_random.type = type;
+    g_random.degree = RandomDegrees[type];
+    g_random.separation = RandomSeparations[type];
+    g_random.state = reinterpret_cast<std::uint32_t*>(buffer) + 1;
+    g_random.end = g_random.state + g_random.degree;
+    SeedRandom(seed);
+    SaveRandomPosition();
+    return previous;
+}
+
+char* APS5_VABI setstate_nid_postfix(char* buffer) {
+    std::lock_guard lock(g_randomLock);
+    auto* words = reinterpret_cast<std::uint32_t*>(buffer);
+    const int type = static_cast<int>(words[0] % RandomTypes);
+    const std::uint32_t rear = words[0] / RandomTypes;
+    if (type != 0 && rear >= static_cast<std::uint32_t>(RandomDegrees[type])) return nullptr;
+    char* previous = reinterpret_cast<char*>(g_random.state - 1);
+    SaveRandomPosition();
+    g_random.type = type;
+    g_random.degree = RandomDegrees[type];
+    g_random.separation = RandomSeparations[type];
+    g_random.state = words + 1;
+    if (type != 0) {
+        g_random.rear = g_random.state + rear;
+        g_random.front = g_random.state + (rear + g_random.separation) % g_random.degree;
+    }
+    g_random.end = g_random.state + g_random.degree;
+    return previous;
+}
+
 }
