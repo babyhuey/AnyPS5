@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 extern "C" {
 std::int64_t APS5_VABI sysconf_nid_postfix(int);
@@ -52,8 +53,44 @@ static void CheckProcessorCountSysctl() {
     }
     Require(threw);
 }
+static void CheckSdkVersionSysctl() {
+    *__error_nid_postfix() = 13;
+    std::size_t length = 0;
+    Require(sysctlbyname_nid_postfix("kern.sdk_version", nullptr, &length, nullptr, 0) == 0 && length == sizeof(std::uint32_t));
+    std::uint32_t version = 0;
+    length = sizeof(version);
+    Require(sysctlbyname_nid_postfix("kern.sdk_version", &version, &length, nullptr, 0) == 0 && version == 0x01000000 && length == sizeof(std::uint32_t));
+    Require(*__error_nid_postfix() == 13);
+    unsigned char bytes[4] = {0xaa, 0xaa, 0xaa, 0xaa};
+    length = 2;
+    Require(sysctlbyname_nid_postfix("kern.sdk_version", bytes, &length, nullptr, 0) == -1 && *__error_nid_postfix() == 12);
+    Require(length == 2 && bytes[2] == 0xaa && bytes[3] == 0xaa);
+    length = sizeof(version);
+    Require(sysctlbyname_nid_postfix("kern.sdk_version", &version, &length, &version, sizeof(version)) == -1 && *__error_nid_postfix() == 1);
+}
+static void CheckPseudoRandomSysctl() {
+    *__error_nid_postfix() = 13;
+    unsigned char first[64] = {};
+    unsigned char second[64] = {};
+    std::size_t length = sizeof(first);
+    Require(sysctlbyname_nid_postfix("kern.rng_pseudo", first, &length, nullptr, 0) == 0 && length == sizeof(first));
+    length = sizeof(second);
+    Require(sysctlbyname_nid_postfix("kern.rng_pseudo", second, &length, nullptr, 0) == 0 && length == sizeof(second));
+    Require(std::memcmp(first, second, sizeof(first)) != 0);
+    Require(*__error_nid_postfix() == 13);
+    Require(sysctlbyname_nid_postfix("kern.rng_pseudo", first, &length, first, sizeof(first)) == -1 && *__error_nid_postfix() == 1);
+    bool threw = false;
+    try {
+        sysctlbyname_nid_postfix("kern.rng_pseudo", nullptr, &length, nullptr, 0);
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    Require(threw);
+}
 int main() {
     CheckProcessorCountSysctl();
+    CheckSdkVersionSysctl();
+    CheckPseudoRandomSysctl();
     *__error_nid_postfix() = 13;
     Require(sysconf_nid_postfix(47) == 0x4000);
     Require(getpagesize_nid_postfix() == sysconf_nid_postfix(47));
