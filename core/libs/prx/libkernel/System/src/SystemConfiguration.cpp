@@ -1,4 +1,5 @@
 #include "prx/libc/include/general/VabiMacros.hpp"
+#include "prx/libc/include/HostEntropy.hpp"
 #include "prx/libkernel/DirectMemory/DirectMemory.hpp"
 #include "prx/libkernel/KernelErrors.hpp"
 #include <algorithm>
@@ -90,6 +91,16 @@ int APS5_VABI sysctl_nid_postfix(const int* name, std::uint32_t nameLength, void
     if (name == nullptr) {
         *__error_nid_postfix() = 14;
         return -1;
+    }
+    if (nameLength == 2 && name[0] == 1 && name[1] == 37) {
+        if (newValue != nullptr) {
+            *__error_nid_postfix() = 1;
+            return -1;
+        }
+        std::uint8_t bytes[256];
+        const std::size_t length = oldLength != nullptr ? std::min<std::size_t>(*oldLength, sizeof(bytes)) : 0;
+        HostEntropy_nid_no_patch(bytes, length);
+        return CopyOut(bytes, length, oldValue, oldLength);
     }
     if (nameLength == 2 && name[0] == 6 && name[1] == 3) {
         if (newValue != nullptr) {

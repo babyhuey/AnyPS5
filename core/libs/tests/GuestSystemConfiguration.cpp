@@ -179,6 +179,26 @@ static void CheckPseudoRandomSysctl() {
     }
     Require(threw);
 }
+static void CheckArandomSysctl() {
+    const int mib[] = {1, 37};
+    *__error_nid_postfix() = 13;
+    unsigned char first[300] = {};
+    unsigned char second[64] = {};
+    std::size_t length = sizeof(first);
+    Require(sysctl_nid_postfix(mib, 2, first, &length, nullptr, 0) == 0 && length == 256);
+    for (std::size_t i = 256; i < sizeof(first); ++i) Require(first[i] == 0);
+    length = sizeof(second);
+    Require(sysctl_nid_postfix(mib, 2, second, &length, nullptr, 0) == 0 && length == sizeof(second));
+    Require(std::memcmp(first, second, sizeof(second)) != 0);
+    length = 32;
+    Require(sysctl_nid_postfix(mib, 2, nullptr, &length, nullptr, 0) == 0 && length == 32);
+    length = 1000;
+    Require(sysctl_nid_postfix(mib, 2, nullptr, &length, nullptr, 0) == 0 && length == 256);
+    Require(sysctl_nid_postfix(mib, 2, second, nullptr, nullptr, 0) == 0);
+    Require(*__error_nid_postfix() == 13);
+    length = sizeof(second);
+    Require(sysctl_nid_postfix(mib, 2, second, &length, second, sizeof(second)) == -1 && *__error_nid_postfix() == 1);
+}
 int main() {
     CheckProcessorCountSysctl();
     CheckPhysicalMemorySysctl();
@@ -186,6 +206,7 @@ int main() {
     CheckPathnameSysctl();
     CheckSystemSwVersion();
     CheckPseudoRandomSysctl();
+    CheckArandomSysctl();
     *__error_nid_postfix() = 13;
     Require(sysconf_nid_postfix(47) == 0x4000);
     Require(getpagesize_nid_postfix() == sysconf_nid_postfix(47));
