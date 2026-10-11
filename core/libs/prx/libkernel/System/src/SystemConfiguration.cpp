@@ -90,6 +90,20 @@ int APS5_VABI sysctl_nid_postfix(const int* name, std::uint32_t nameLength, void
         *__error_nid_postfix() = 14;
         return -1;
     }
+    if (nameLength == 2 && name[0] == 1 && name[1] == 37) {
+        if (newValue != nullptr) {
+            *__error_nid_postfix() = 1;
+            return -1;
+        }
+        const std::size_t length = oldLength != nullptr ? std::min<std::size_t>(*oldLength, 256) : 0;
+        if (oldValue != nullptr) {
+            static std::random_device device;
+            auto* bytes = static_cast<std::uint8_t*>(oldValue);
+            for (std::size_t i = 0; i < length; ++i) bytes[i] = static_cast<std::uint8_t>(device());
+        }
+        if (oldLength != nullptr) *oldLength = length;
+        return 0;
+    }
     if (nameLength != 2 || name[0] != 6 || name[1] != 3) {
         std::string mib;
         for (std::uint32_t i = 0; i < nameLength; ++i) mib += (i == 0 ? "" : ".") + std::to_string(name[i]);
