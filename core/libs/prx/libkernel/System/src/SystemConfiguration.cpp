@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <random>
 #include <stdexcept>
 #include <string>
 #ifdef _WIN32
@@ -109,6 +110,17 @@ int APS5_VABI sysctlbyname_nid_postfix(const char* name, void* oldValue, std::si
         }
         static constexpr std::uint32_t sdkVersion = 0x01000000;
         return CopyOut(&sdkVersion, sizeof(sdkVersion), oldValue, oldLength);
+    }
+    if (std::strcmp(name, "kern.rng_pseudo") == 0) {
+        if (newValue != nullptr) {
+            *__error_nid_postfix() = 1;
+            return -1;
+        }
+        if (oldValue == nullptr || oldLength == nullptr) throw std::runtime_error(std::string(__func__) + ": kern.rng_pseudo without an output buffer");
+        static std::random_device device;
+        auto* bytes = static_cast<std::uint8_t*>(oldValue);
+        for (std::size_t i = 0; i < *oldLength; ++i) bytes[i] = static_cast<std::uint8_t>(device());
+        return 0;
     }
     if (std::strcmp(name, "hw.ncpu") != 0) throw std::runtime_error(std::string(__func__) + ": unsupported name " + name);
     static constexpr int mib[] = {6, 3};
