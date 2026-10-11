@@ -15,6 +15,16 @@ static_assert(offsetof(HostEntry, family) == 16);
 static_assert(offsetof(HostEntry, length) == 20);
 static_assert(offsetof(HostEntry, addresses) == 24);
 
+struct ServiceEntry {
+    char* name;
+    char** aliases;
+    std::int32_t port;
+    char* protocol;
+};
+static_assert(sizeof(ServiceEntry) == 32);
+static_assert(offsetof(ServiceEntry, port) == 16);
+static_assert(offsetof(ServiceEntry, protocol) == 24);
+
 struct AddressInfo {
     std::int32_t flags;
     std::int32_t family;

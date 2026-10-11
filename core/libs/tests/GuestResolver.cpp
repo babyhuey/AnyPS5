@@ -23,6 +23,7 @@ int APS5_VABI getaddrinfo_nid_postfix(const char*, const char*, const GuestResol
 void APS5_VABI freeaddrinfo_nid_postfix(GuestResolver::AddressInfo*);
 int APS5_VABI getnameinfo_nid_postfix(const void*, std::uint32_t, char*, std::uint32_t, char*, std::uint32_t, int);
 const char* APS5_VABI gai_strerror_nid_postfix(int);
+GuestResolver::ServiceEntry* APS5_VABI getservbyname_nid_postfix(const char*, const char*);
 }
 void Require(bool condition, std::source_location location = std::source_location::current()) {
     if (!condition) {
@@ -140,4 +141,17 @@ int main() {
     hints.flags = 12;
     Require(getaddrinfo_nid_postfix("invalid-numeric-address", "1", &hints, &result) == 8 && !result);
     freeaddrinfo_nid_postfix(nullptr);
+    for (const auto* protocol : {"tcp", static_cast<const char*>(nullptr)}) {
+        const auto* service = getservbyname_nid_postfix("http", protocol);
+        const auto* native = ::getservbyname("http", protocol);
+        Require((service == nullptr) == (native == nullptr));
+        if (!service) continue;
+        Require(std::strcmp(service->name, native->s_name) == 0 && std::strcmp(service->protocol, native->s_proto) == 0);
+        Require(service->port == static_cast<std::uint16_t>(native->s_port));
+        const auto* port = reinterpret_cast<const unsigned char*>(&service->port);
+        Require(port[0] == 0 && port[1] == 80 && port[2] == 0 && port[3] == 0);
+        Require(service->aliases != nullptr);
+    }
+    Require(getservbyname_nid_postfix("anyps5-no-such-service", "tcp") == nullptr);
+    Require(getservbyname_nid_postfix(nullptr, "tcp") == nullptr);
 }
