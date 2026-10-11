@@ -11,6 +11,15 @@
 #include "SceTypes.hpp"
 #include "prx/libc/include/General.hpp"
 #include "prx/libkernel/File/include/DirectoryDescriptor.hpp"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#ifndef SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+#define SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE 0x2
+#endif
+#endif
 
 extern "C" int* APS5_VABI __error_nid_postfix();
 
@@ -100,6 +109,38 @@ int APS5_VABI fchdir_nid_postfix(int fd) {
     if (path == nullptr) return static_cast<int>(Fail(error));
     error = SetWorkingDirectory_nid_no_patch(path);
     if (error != 0) return static_cast<int>(Fail(error));
+    return 0;
+}
+
+int APS5_VABI symlink_nid_postfix(const char* target, const char* created) {
+    if (target == nullptr || created == nullptr) return static_cast<int>(Fail(GuestEfault));
+    if (*target == '\0' || *created == '\0') return static_cast<int>(Fail(GuestEnoent));
+    if (*target == '/') {
+        NotImplemented_nid_no_patch("symlink: absolute targets");
+        return -1;
+    }
+    const auto native = ResolvePath_nid_no_patch(created);
+    std::error_code error;
+    if (std::filesystem::exists(std::filesystem::symlink_status(native, error))) return static_cast<int>(Fail(GuestEexist));
+    if (!std::filesystem::is_directory(native.parent_path(), error)) return static_cast<int>(Fail(GuestEnoent));
+    const std::filesystem::path contents(target);
+    const bool directory = std::filesystem::is_directory(native.parent_path() / contents, error);
+#ifdef _WIN32
+    DWORD flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+    if (directory) flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+    if (!CreateSymbolicLinkW(native.wstring().c_str(), std::filesystem::path(contents).make_preferred().wstring().c_str(), flags)) {
+        const DWORD code = GetLastError();
+        if (code == ERROR_PRIVILEGE_NOT_HELD) return static_cast<int>(Fail(GuestEperm));
+        throw std::system_error(static_cast<int>(code), std::system_category(), "symlink");
+    }
+#else
+    if (directory)
+        std::filesystem::create_directory_symlink(contents, native, error);
+    else
+        std::filesystem::create_symlink(contents, native, error);
+    if (error) throw std::system_error(error, "symlink");
+#endif
+    RecordWrittenPath_nid_no_patch(native);
     return 0;
 }
 
