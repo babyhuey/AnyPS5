@@ -14,6 +14,7 @@ int APS5_VABI sceKernelJitMapSharedMemory(int, int, void**);
 int APS5_VABI sceKernelMunmap(void*, std::size_t);
 int APS5_VABI close_nid_postfix(int);
 int APS5_VABI dup_nid_postfix(int);
+int APS5_VABI dup2_nid_postfix(int, int);
 int APS5_VABI shm_open_nid_postfix(const char*, int, int);
 }
 
@@ -100,6 +101,34 @@ void OneViewWritesAndRuns() {
     Require(close_nid_postfix(duplicate) == 0);
 }
 
+void Dup2KeepsTheDescriptorTableInStep() {
+    const int fd = Create(nullptr, Read | Write);
+    const int target = shm_open_nid_postfix(reinterpret_cast<const char*>(1), 0x2, 0600);
+    Require(target >= 0 && target != fd);
+    Require(dup2_nid_postfix(fd, target) == target);
+    auto* writable = static_cast<unsigned char*>(Map(fd, Read | Write));
+    auto* readable = static_cast<unsigned char*>(Map(target, Read));
+    writable[0x100] = 0x77;
+    Require(readable[0x100] == 0x77);
+    void* address = nullptr;
+    Require(sceKernelJitMapSharedMemory(target, Read | Execute, &address) == SCE_KERNEL_ERROR_EACCES);
+    Require(dup2_nid_postfix(fd, fd) == fd);
+    auto* same = static_cast<unsigned char*>(Map(fd, Read));
+    Require(same[0x100] == 0x77);
+    const int plain = shm_open_nid_postfix(reinterpret_cast<const char*>(1), 0x2, 0600);
+    Require(plain >= 0);
+    Require(dup2_nid_postfix(plain, target) == target);
+    address = nullptr;
+    Require(sceKernelJitMapSharedMemory(target, Read, &address) == SCE_KERNEL_ERROR_EBADF);
+    Require(address == nullptr);
+    Require(sceKernelMunmap(same, Size) == 0);
+    Require(sceKernelMunmap(readable, Size) == 0);
+    Require(sceKernelMunmap(writable, Size) == 0);
+    Require(close_nid_postfix(plain) == 0);
+    Require(close_nid_postfix(target) == 0);
+    Require(close_nid_postfix(fd) == 0);
+}
+
 void InvalidArgumentsAreRejected() {
     int fd = -1;
     Require(sceKernelJitCreateSharedMemory(nullptr, 0, Read | Write | Execute, &fd) == SCE_KERNEL_ERROR_EINVAL);
@@ -140,5 +169,6 @@ void InvalidArgumentsAreRejected() {
 int main() {
     WriteThroughAliasRunsThroughExecutableView();
     OneViewWritesAndRuns();
+    Dup2KeepsTheDescriptorTableInStep();
     InvalidArgumentsAreRejected();
 }
