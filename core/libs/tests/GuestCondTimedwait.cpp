@@ -13,6 +13,8 @@ int APS5_VABI scePthreadMutexUnlock(PthreadMutex* mutex);
 int APS5_VABI scePthreadCondInit(PthreadCond* cond, const PthreadCondattr* attr, const char* name);
 int APS5_VABI scePthreadCondDestroy(PthreadCond* cond);
 int APS5_VABI scePthreadCondTimedwait(PthreadCond* cond, PthreadMutex* mutex, unsigned int usec);
+int APS5_VABI scePthreadCondSignal(PthreadCond* cond);
+int APS5_VABI pthread_cond_reltimedwait_np_nid_postfix(PthreadCond* cond, PthreadMutex* mutex, unsigned int usec);
 int APS5_VABI __cxa_atexit_nid_postfix(void (APS5_VABI *)(void*), void*, void*);
 void APS5_VABI __pthread_cxa_finalize_nid_postfix(void*);
 unsigned int APS5_VABI sceKernelSleep(unsigned int seconds);
@@ -23,18 +25,30 @@ static void APS5_VABI Cleanup(void*) { cleanupAt = 0; }
 
 static constexpr int SCE_OK = 0;
 static constexpr int SCE_KERNEL_ERROR_ETIMEDOUT = static_cast<int>(0x8002003C);
+static constexpr int GUEST_ETIMEDOUT = 60;
 
 static void Require(bool value) { if (!value) std::abort(); }
 
 struct Context {
     PthreadMutex mutex = nullptr;
+    PthreadCond cond = nullptr;
     std::atomic<bool> acquired{false};
+    bool signalled = false;
 };
 
 static void* APS5_VABI Contender(void* arg) {
     auto& context = *static_cast<Context*>(arg);
     Require(scePthreadMutexLock(&context.mutex) == SCE_OK);
     context.acquired.store(true);
+    Require(scePthreadMutexUnlock(&context.mutex) == SCE_OK);
+    return nullptr;
+}
+
+static void* APS5_VABI Signaller(void* arg) {
+    auto& context = *static_cast<Context*>(arg);
+    Require(scePthreadMutexLock(&context.mutex) == SCE_OK);
+    context.signalled = true;
+    Require(scePthreadCondSignal(&context.cond) == SCE_OK);
     Require(scePthreadMutexUnlock(&context.mutex) == SCE_OK);
     return nullptr;
 }
@@ -50,6 +64,15 @@ int main() {
     Require(scePthreadCreate(&thread, nullptr, Contender, &context, nullptr) == SCE_OK);
     while (!context.acquired.load())
         Require(scePthreadCondTimedwait(&cond, &context.mutex, 1000) == SCE_KERNEL_ERROR_ETIMEDOUT);
+    Require(scePthreadMutexUnlock(&context.mutex) == SCE_OK);
+    Require(scePthreadJoin(thread, nullptr) == SCE_OK);
+
+    context.cond = cond;
+    Require(scePthreadMutexLock(&context.mutex) == SCE_OK);
+    Require(pthread_cond_reltimedwait_np_nid_postfix(&cond, &context.mutex, 1000) == GUEST_ETIMEDOUT);
+    Require(scePthreadCreate(&thread, nullptr, Signaller, &context, nullptr) == SCE_OK);
+    while (!context.signalled)
+        Require(pthread_cond_reltimedwait_np_nid_postfix(&cond, &context.mutex, 10000000) == SCE_OK);
     Require(scePthreadMutexUnlock(&context.mutex) == SCE_OK);
     Require(scePthreadJoin(thread, nullptr) == SCE_OK);
 
