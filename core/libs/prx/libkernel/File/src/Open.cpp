@@ -11,7 +11,6 @@
 #include "SceTypes.hpp"
 
 #include <cerrno>
-#include <cstdio>
 #include <cstdarg>
 #include <limits>
 #include <stdexcept>
@@ -287,14 +286,6 @@ int APS5_VABI sceKernelFcntl(int d, int command, ...) {
         result = fcntl_nid_postfix(d, command);
     }
     return result < 0 ? SceKernelError(*__error_nid_postfix()) : result;
-}
-
-int APS5_VABI _ioctl_nid_postfix(int d, unsigned long request, ...) {
-    (void)d;
-    char name[40];
-    std::snprintf(name, sizeof(name), "_ioctl: request 0x%lx", request);
-    NotImplemented_nid_no_patch(name);
-    return -1;
 }
 
 }
