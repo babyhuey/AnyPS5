@@ -3,6 +3,7 @@
 #include "prx/libc/include/General.hpp"
 #include "prx/libc/include/FilesystemError.hpp"
 #include "prx/libc/include/GuestArena.hpp"
+#include "prx/libkernel/DirectMemory/DirectMemory.hpp"
 #include "prx/libkernel/File/include/File.hpp"
 #include "prx/libkernel/File/include/SharedMemory.hpp"
 #include "prx/libkernel/File/include/DirectoryDescriptor.hpp"
@@ -225,6 +226,7 @@ int APS5_VABI sceKernelOpen(const char* path, int flags, std::uint16_t mode) {
 
 int APS5_VABI sceKernelClose(int d) {
     File::ForgetRandomDevice(d);
+    ForgetJitSharedMemory(d);
 #ifdef _WIN32
     File::ForgetDirectoryDescriptor(d);
     File::ForgetFileLock(d);
