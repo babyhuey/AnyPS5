@@ -21,6 +21,14 @@
 extern "C" int* APS5_VABI sceNetErrnoLoc();
 
 namespace {
+struct ServiceLookup {
+    GuestResolver::ServiceEntry entry{};
+    std::string name;
+    std::string protocol;
+    std::vector<std::string> aliasNames;
+    std::vector<char*> aliases;
+};
+
 struct HostLookup {
     GuestResolver::HostEntry entry{};
     std::string name;
@@ -148,6 +156,36 @@ GuestResolver::HostEntry* APS5_VABI gethostbyname_nid_postfix(const char* name) 
         return &lookup.entry;
     } catch (const std::bad_alloc&) {
         *sceNetErrnoLoc() = -1;
+        errno = ENOMEM;
+        return nullptr;
+    }
+}
+
+GuestResolver::ServiceEntry* APS5_VABI getservbyname_nid_postfix(const char* name, const char* protocol) {
+    if (!name || !Ready()) return nullptr;
+    try {
+#ifdef _WIN32
+        const servent* native = ::getservbyname(name, protocol);
+#else
+        servent nativeEntry{};
+        servent* native = nullptr;
+        std::vector<char> buffer(1024);
+        while (::getservbyname_r(name, protocol, &nativeEntry, buffer.data(), buffer.size(), &native) == ERANGE)
+            buffer.resize(buffer.size() * 2);
+#endif
+        if (!native) return nullptr;
+        static thread_local ServiceLookup lookup;
+        lookup.name = native->s_name;
+        lookup.protocol = native->s_proto;
+        lookup.aliasNames.clear();
+        lookup.aliases.clear();
+        for (auto** alias = native->s_aliases; *alias; ++alias) lookup.aliasNames.emplace_back(*alias);
+        for (auto& alias : lookup.aliasNames) lookup.aliases.push_back(alias.data());
+        lookup.aliases.push_back(nullptr);
+        lookup.entry = {lookup.name.data(), lookup.aliases.data(), static_cast<std::uint16_t>(native->s_port),
+            lookup.protocol.data()};
+        return &lookup.entry;
+    } catch (const std::bad_alloc&) {
         errno = ENOMEM;
         return nullptr;
     }
