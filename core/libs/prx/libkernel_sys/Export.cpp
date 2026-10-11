@@ -72,6 +72,12 @@ int APS5_VABI fork_nid_postfix(void) {
     return -1;
 }
 
+int APS5_VABI chroot_nid_postfix(const char* path) {
+    (void)path;
+    NotImplemented_nid_no_patch("chroot: changing the root directory");
+    return -1;
+}
+
 int APS5_VABI setsid_nid_postfix(void) {
     return static_cast<int>(Fail(GuestEperm));
 }
