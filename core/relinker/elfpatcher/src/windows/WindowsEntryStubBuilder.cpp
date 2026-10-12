@@ -449,6 +449,24 @@ WindowsEntryStub WindowsEntryStubBuilder::Build(const std::uint32_t dataRva, con
         const auto resolved = code.Branch({0x0f, 0x85});
         code.Emit({0x48, 0x83, 0xc7, 4, 0xff, 0xcd});
         code.Rip({0x0f, 0x85}, search);
+        if (imports[index].Weak) {
+            code.Emit({0x31, 0xc0});
+            if (imports[index].Addend != 0) {
+                code.Emit({0x48, 0xb8});
+                code.U64(imports[index].Addend);
+            }
+            guestStartup.WriteImport(code, imports[index], handles);
+            const auto done = code.Branch({0xe9});
+            code.PatchBranch(resolved, code.GetRva());
+            if (imports[index].Addend != 0) {
+                code.Emit({0x48, 0xba});
+                code.U64(imports[index].Addend);
+                code.Emit({0x48, 0x01, 0xd0});
+            }
+            guestStartup.WriteImport(code, imports[index], handles);
+            code.PatchBranch(done, code.GetRva());
+            continue;
+        }
         if (lazyBinding) {
             lazyUnresolvedImports.push_back(index);
             const auto skipGotWrite = code.Branch({0xe9});

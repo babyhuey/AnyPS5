@@ -604,6 +604,18 @@ void sceDynlibDataOffsets() {
                    "Strict filter accepted a RELATIVE relocation symbol outside the symbol table");
 }
 
+void weakImportBinding() {
+    Relinker::SysVDynamicSectionBuilder builder;
+    const std::vector<Relinker::NidReference> references = {
+        {"weak", {}, 6, 0x100, 0x2000, 0, true},
+        {"strong", {}, 6, 0x118, 0x2008, 0}
+    };
+    const auto section = builder.BuildDynamicSection(references, {}, 0, 0);
+    require(section.DynSymData.size() == 72, "Weak import test built the wrong dynamic symbol count");
+    require((section.DynSymData[28] >> 4) == 2, "Weak import binding was not preserved");
+    require((section.DynSymData[52] >> 4) == 1, "Strong import binding changed");
+}
+
 }
 
 int main() {
@@ -626,6 +638,7 @@ int main() {
         filterAndPltCompaction();
         relativeRelocationTableBounds();
         sceDynlibDataOffsets();
+        weakImportBinding();
         std::cout << "Strict NID filter tests passed\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -142,7 +142,7 @@ def consumer(owner, symbol='shared#A#B', expected=22, module_name=None):
     return image
 
 
-def executable(owner, symbol='shared#A#B', module_name=None, extra_dependencies=()):
+def executable(owner, symbol='shared#A#B', module_name=None, extra_dependencies=(), weak=False):
     image = main_fixture()
     struct.pack_into('<I', image, 68, 7)
     strings = b'\0' + symbol.encode() + b'\0' + owner.encode() + b'\0'
@@ -162,9 +162,12 @@ def executable(owner, symbol='shared#A#B', module_name=None, extra_dependencies=
     tags.extend((1, offset) for offset in dependency_offsets)
     dynamic(image, 0x4600, 120, tags)
     struct.pack_into('<IIIII', image, 0x4840, 1, 2, 1, 0, 0)
-    struct.pack_into('<IBBHQQ', image, 0x4898, 1, 0x12, 0, 0, 0, 0)
+    struct.pack_into('<IBBHQQ', image, 0x4898, 1, 0x22 if weak else 0x12, 0, 0, 0, 0)
     struct.pack_into('<QQq', image, 0x4900, 0x4a20, (1 << 32) | 6, 0)
-    image[0x4000:0x4007] = b'\xff\x15' + struct.pack('<i', 0x4a20 - 0x4006) + b'\xc3'
+    if weak:
+        image[0x4000:0x4012] = b'\x48\x8b\x05' + struct.pack('<i', 0x4a20 - 0x4007) + b'\x48\x85\xc0\x74\x03\xff\xd0\xc3\x31\xc0\xc3'
+    else:
+        image[0x4000:0x4007] = b'\xff\x15' + struct.pack('<i', 0x4a20 - 0x4006) + b'\xc3'
     return image
 
 
@@ -252,7 +255,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='anyps5-import-modules-') as directory:
         work = Path(directory)
 
-        def convert(name, owner, symbol='shared#A#B', guest_owner=None, module_name=None, provider_name='b.prx', extra_dependencies=(), windows_gui=False):
+        def convert(name, owner, symbol='shared#A#B', guest_owner=None, module_name=None, provider_name='b.prx', extra_dependencies=(), windows_gui=False, weak=False):
             case = work / name
             modules = case / 'prx'
             modules.mkdir(parents=True)
@@ -266,7 +269,7 @@ def main():
             for dependency in extra_dependencies:
                 (modules / dependency).write_bytes(provider(44))
             source = case / 'input.elf'
-            source.write_bytes(executable(owner, symbol, module_name, extra_dependencies))
+            source.write_bytes(executable(owner, symbol, module_name, extra_dependencies, weak))
             output = case / 'output.exe'
             arguments = [str(relinker), '--windows']
             if windows_gui:
@@ -391,6 +394,12 @@ def main():
                 assert result.returncode == 0, result.stderr
                 run_status = exit_code_without_standard_handles(output)
                 assert run_status == expected, (name, hex(run_status), hex(expected))
+
+        result, output = convert('missing-weak-symbol', 'a.prx', 'absent#A#B', weak=True)
+        assert result.returncode == 0, result.stderr
+        if os.name == 'nt':
+            run = subprocess.run([str(output)], capture_output=True, text=True, timeout=30)
+            assert run.returncode == 0 and 'unresolved ELF import absent' not in run.stderr, (run.returncode, run.stdout, run.stderr)
 
         result, output = convert('missing-symbol', 'a.prx', 'absent#A#B')
         assert result.returncode == 0, result.stderr

@@ -251,18 +251,19 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
             }
 
             const FileByteOffset symOff = dynSymTabOffset + static_cast<FileByteOffset>(symIdx) * symEntSize;
-            if (symOff < dynSymTabOffset || symOff > raw.size() || raw.size() - symOff < 4)
+            if (symOff < dynSymTabOffset || symOff > raw.size() || raw.size() - symOff < 5)
                 throw RelinkerException("Symbol table entry out of bounds", symOff);
 
             std::uint32_t nameOff = 0;
             std::memcpy(&nameOff, raw.data() + symOff, 4);
+            const bool weak = (raw[symOff + 4] >> 4) == STB_WEAK;
 
             const auto name = readCStr(nameOff);
             if (name.empty() && (raw.size() - symOff < symEntSize
                                  || std::any_of(raw.begin() + static_cast<std::ptrdiff_t>(symOff), raw.begin() + static_cast<std::ptrdiff_t>(symOff + symEntSize),
                                                 [](const std::uint8_t byte) { return byte != 0; })))
                 throw RelinkerException("Unnamed import symbol is not a null symbol entry", symOff);
-            nidRefs.push_back({name, Domain::ImportModule(name, importModules, neededLibraries), relType, pos, rOffset, rAddend});
+            nidRefs.push_back({name, Domain::ImportModule(name, importModules, neededLibraries), relType, pos, rOffset, rAddend, weak});
         }
     };
 
