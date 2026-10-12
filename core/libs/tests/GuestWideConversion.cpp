@@ -12,6 +12,7 @@ extern "C" {
 std::uint64_t APS5_VABI _WStoul_nid_postfix(const char16_t*, char16_t**, int);
 int APS5_VABI _Iswctype_nid_postfix(std::uint32_t, std::uint64_t);
 int APS5_VABI swscanf_s_nid_postfix(const char16_t*, const char16_t*, ...);
+int APS5_VABI swscanf_nid_postfix(const char16_t*, const char16_t*, ...);
 int APS5_VABI iswalnum_nid_postfix(std::uint32_t);
 int APS5_VABI iswalpha_nid_postfix(std::uint32_t);
 int APS5_VABI iswcntrl_nid_postfix(std::uint32_t);
@@ -133,6 +134,13 @@ static void CheckScan() {
     Require(swscanf_s_nid_postfix(u"été!", u"%l[^!]", text, std::size_t{6}) == 1 && std::u16string(text) == u"été", "%l[^");
     std::int64_t count = -1;
     Require(swscanf_s_nid_postfix(u" 12 ab", u"%d %ln", &first, &count) == 1 && count == 4, "%ln");
+    char16_t unbounded[16] = {};
+    Require(swscanf_nid_postfix(u"7 hello world", u"%d%ls", &first, unbounded) == 2 && first == 7 && std::u16string(unbounded) == u"hello", "swscanf %ls takes no size");
+    char set[8] = {};
+    Require(swscanf_nid_postfix(u"cab12", u"%[abc]%d", set, &second) == 2 && std::strcmp(set, "cab") == 0 && second == 12, "swscanf %[ takes no size");
+    char16_t letters[3] = {u'?', u'?', u'?'};
+    Require(swscanf_nid_postfix(u"xyz", u"%2lc", letters) == 1 && letters[0] == u'x' && letters[1] == u'y' && letters[2] == u'?', "swscanf %2lc takes no size");
+    Require(swscanf_nid_postfix(u"", u"%d", &first) == -1, "swscanf input failure");
 
     double real = 0;
     Require(swscanf_s_nid_postfix(u"1.5e3", u"%lf", &real) == 1 && real == 1500.0, "%lf");

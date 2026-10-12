@@ -135,12 +135,13 @@ class WideScanner {
     const char16_t* input;
     const char16_t* format;
     LibcDetail::FormatArguments args;
+    const bool secure;
     int assigned = 0;
     bool converted = false;
 
 public:
-    WideScanner(const char16_t* buffer, const char16_t* formatText, const void* source)
-        : start(buffer), input(buffer), format(formatText), args(source) {}
+    WideScanner(const char16_t* buffer, const char16_t* formatText, const void* source, bool boundsChecked)
+        : start(buffer), input(buffer), format(formatText), args(source), secure(boundsChecked) {}
 
     int Run() {
         while (*format != 0) {
@@ -317,7 +318,7 @@ private:
         std::size_t capacity = 0;
         if (!directive.suppress) {
             target = args.Next<void*>();
-            capacity = args.Next<unsigned int>();
+            capacity = secure ? args.Next<unsigned int>() : std::numeric_limits<std::size_t>::max();
             if (target == nullptr) return Outcome::Violation;
         }
         if (directive.conversion == u's') SkipSpace();
@@ -388,7 +389,34 @@ int APS5_VABI swscanf_s_nid_postfix(const char16_t* buffer, const char16_t* form
     va_start(args, format);
 #endif
     try {
-        const int result = WideScanner(buffer, format, args).Run();
+        const int result = WideScanner(buffer, format, args, true).Run();
+#ifdef _WIN32
+        __builtin_sysv_va_end(args);
+#else
+        va_end(args);
+#endif
+        return result;
+    } catch (...) {
+#ifdef _WIN32
+        __builtin_sysv_va_end(args);
+#else
+        va_end(args);
+#endif
+        throw;
+    }
+}
+
+int APS5_VABI swscanf_nid_postfix(const char16_t* buffer, const char16_t* format, ...) {
+    if (buffer == nullptr || format == nullptr) return EOF;
+#ifdef _WIN32
+    __builtin_sysv_va_list args;
+    __builtin_sysv_va_start(args, format);
+#else
+    std::va_list args;
+    va_start(args, format);
+#endif
+    try {
+        const int result = WideScanner(buffer, format, args, false).Run();
 #ifdef _WIN32
         __builtin_sysv_va_end(args);
 #else
