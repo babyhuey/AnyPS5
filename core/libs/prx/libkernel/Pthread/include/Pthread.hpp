@@ -158,5 +158,6 @@ int GuestThreadCpuClockId(const PthreadPrivate* thread);
 bool GuestThreadCpuNanos(int cpuClockThread, std::uint64_t* nanos);
 void SetLiveGuestThreadsAffinity(KernelCpumask mask);
 KernelCpumask LiveGuestThreadsAffinity();
+bool IsLiveGuestThread(const PthreadPrivate* thread);
 
 #endif
