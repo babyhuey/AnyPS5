@@ -2,6 +2,7 @@
 #include "prx/libkernel/File/include/File.hpp"
 #include "prx/libkernel/KernelErrors.hpp"
 #include "prx/libc/include/HostThreadLocal.hpp"
+#include "prx/libc/include/GuestDirectory.hpp"
 
 #include <cerrno>
 #include <string>
@@ -188,4 +189,17 @@ extern "C" const char* GetDirectoryDescriptorPath_nid_no_patch(int fd, int* erro
     path.assign(reinterpret_cast<const char*>(utf8Path.data()), utf8Path.size());
     *error = 0;
     return path.c_str();
+}
+
+extern "C" int APS5_VABI close_nid_postfix(int d);
+extern "C" int* APS5_VABI __error_nid_postfix();
+
+extern "C" void* APS5_VABI fdopendir_nid_postfix(int fd) {
+    int error = 0;
+    const char* path = GetDirectoryDescriptorPath_nid_no_patch(fd, &error);
+    if (path == nullptr) {
+        *__error_nid_postfix() = error == EBADF ? 9 : 20;
+        return nullptr;
+    }
+    return OpenDescriptorDirectory_nid_no_patch(path, fd, close_nid_postfix);
 }
