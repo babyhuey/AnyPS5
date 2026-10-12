@@ -124,14 +124,26 @@ def conflicts(a, b):
     return {path: [] if path in a["added"] else clashes(a, b, path) for path in files}
 
 
+def dependencies(prs, number):
+    found, pending = set(), [number]
+    while pending:
+        for n in prs[pending.pop()]["depends"]:
+            if n in prs and n not in found:
+                found.add(n)
+                pending.append(n)
+    return found
+
+
 def overlaps(prs, a, b):
     pa, pb = prs[a], prs[b]
-    if b in pa["depends"] or a in pb["depends"]:
+    da, db = dependencies(prs, a), dependencies(prs, b)
+    if b in da or a in db:
         return None
-    found = {"added": pa["added"] & pb["added"]}
+    shared = [prs[n] for n in da & db]
+    found = {"added": (pa["added"] & pb["added"]).difference(*(pr["added"] for pr in shared))}
     if pa["author"] != pb["author"]:
         found["conflicts"] = conflicts(pa, pb)
-        found["exports"] = pa["exports"] & pb["exports"]
+        found["exports"] = (pa["exports"] & pb["exports"]).difference(*(pr["exports"] for pr in shared))
     return found if any(found.values()) else None
 
 
