@@ -134,6 +134,7 @@ def main():
     parser.add_argument("--label", default="main")
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--linux", action="store_true")
+    parser.add_argument("--trap-sdk-syscall-stubs", action="store_true", help="pass --trap-sdk-syscall-stubs to the relinker")
     parser.add_argument("--skip", nargs="*", default=["PPSA99169"])
     parser.add_argument("--mingw-bin", type=Path, help="WinLibs mingw64\\bin; defaults to the directory of g++ on PATH")
     parser.add_argument("titles", nargs="*")
@@ -161,7 +162,7 @@ def main():
             print(tid, rows[-1]["stop"], flush=True)
             continue
         app = work / ("app.elf" if args.linux else "app.exe")
-        command = [str(args.relinker)] + ([] if args.linux else ["--windows"]) + ["--rpath", str(args.libs.resolve()).replace("\\", "/"), str(work / "src" / "eboot.elf"), str(app)]
+        command = [str(args.relinker)] + ([] if args.linux else ["--windows"]) + (["--trap-sdk-syscall-stubs"] if args.trap_sdk_syscall_stubs else []) + ["--rpath", str(args.libs.resolve()).replace("\\", "/"), str(work / "src" / "eboot.elf"), str(app)]
         relink = subprocess.run(command, cwd=work, capture_output=True, text=True)
         (work / "relink.log").write_text(relink.stdout + relink.stderr)
         if relink.returncode != 0:
