@@ -22,6 +22,7 @@ int APS5_VABI getpid_nid_postfix(void);
 int* APS5_VABI __error_nid_postfix();
 Pthread APS5_VABI pthread_self_nid_postfix(void);
 int APS5_VABI pthread_getaffinity_np_nid_postfix(Pthread thread, std::size_t cpusetSize, void* cpuset);
+int APS5_VABI pthread_setaffinity_np_nid_postfix(Pthread thread, std::size_t cpusetSize, const void* cpuset);
 }
 
 static constexpr int SCE_OK = 0;
@@ -134,6 +135,20 @@ int main() {
         Require(threadAffinity == cpu);
         Require(ReadCpuset(thread) == cpu);
     }
+    unsigned char requested[GUEST_CPUSET_BYTES] = {};
+    const KernelCpumask lowest = available & (~available + 1);
+    std::memcpy(requested, &lowest, sizeof(lowest));
+    Require(pthread_setaffinity_np_nid_postfix(thread, GUEST_CPUSET_BYTES, requested) == 0);
+    Require(ReadCpuset(thread) == lowest);
+    std::memcpy(requested, &available, sizeof(available));
+    Require(pthread_setaffinity_np_nid_postfix(thread, GUEST_CPUSET_BYTES, requested) == 0);
+    Require(ReadCpuset(thread) == available);
+    Require(pthread_setaffinity_np_nid_postfix(thread, sizeof(KernelCpumask), requested) == GUEST_ERANGE);
+    Require(pthread_setaffinity_np_nid_postfix(thread, GUEST_CPUSET_BYTES, nullptr) == GUEST_EFAULT);
+    Require(pthread_setaffinity_np_nid_postfix(nullptr, GUEST_CPUSET_BYTES, requested) == GUEST_EINVAL);
+    requested[sizeof(KernelCpumask)] = 1;
+    Require(pthread_setaffinity_np_nid_postfix(thread, GUEST_CPUSET_BYTES, requested) == GUEST_EINVAL);
+    Require(ReadCpuset(thread) == available);
     release.set_value();
     Require(scePthreadJoin(thread, nullptr) == SCE_OK);
 
