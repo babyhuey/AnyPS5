@@ -6,6 +6,7 @@
 #include "prx/libc/include/General.hpp"
 #include "prx/libc/include/FilesystemError.hpp"
 #include "prx/libc/include/GuestArena.hpp"
+#include "prx/libkernel/DirectMemory/DirectMemory.hpp"
 #include "prx/libkernel/File/include/File.hpp"
 #include "prx/libkernel/File/include/SharedMemory.hpp"
 #include "prx/libkernel/File/include/FileFlags.hpp"
@@ -501,6 +502,7 @@ int APS5_VABI close_nid_postfix(int d) {
     }
     File::ForgetRandomDevice(d);
     File::ForgetDescriptor(d);
+    ForgetJitSharedMemory(d);
 #ifdef _WIN32
     File::ForgetDirectoryDescriptor(d);
     File::ForgetFileLock(d);
@@ -558,6 +560,7 @@ int APS5_VABI dup_nid_postfix(int d) {
         throw std::runtime_error(std::string(__func__) + ": host descriptor reached the guest socket range");
     if (File::IsRandomDevice(d)) File::RememberRandomDevice(duplicate);
     File::ShareDescriptor(d, duplicate);
+    DuplicateJitSharedMemory(d, duplicate);
     return duplicate;
 }
 
@@ -584,6 +587,7 @@ int APS5_VABI dup2_nid_postfix(int from, int to) {
     File::ForgetRandomDevice(to);
     if (sourceIsRandom) File::RememberRandomDevice(to);
     File::ShareDescriptor(from, to);
+    DuplicateJitSharedMemory(from, to);
     return to;
 #else
     if (from == to) {
@@ -596,6 +600,7 @@ int APS5_VABI dup2_nid_postfix(int from, int to) {
     File::ForgetRandomDevice(to);
     if (sourceIsRandom) File::RememberRandomDevice(to);
     File::ShareDescriptor(from, to);
+    DuplicateJitSharedMemory(from, to);
     return result;
 #endif
 }
