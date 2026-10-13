@@ -548,6 +548,11 @@ int APS5_VABI getrlimit_nid_postfix(int resource, GuestResourceLimit* limit) {
     }
 }
 
+int APS5_VABI getdtablesize_nid_postfix(void) {
+    NotImplemented_nid_no_patch("getdtablesize: the console's descriptor limit");
+    return -1;
+}
+
 int APS5_VABI sceKernelIsTrinityMode(void) {
     return 0;
 }
