@@ -83,6 +83,7 @@ def prepare(zip_path, work):
                 content = unself.unwrap(content)[0]
             target.write_bytes(content)
         data = z.read(eboot)
+    (work / "app0" / "eboot.bin").write_bytes(data)
     elf = data if data[:4] == b"\x7fELF" else unself.unwrap(data)[0]
     (work / "src" / "eboot.elf").write_bytes(elf)
 
