@@ -20,4 +20,5 @@
 
 ### Functional
 
+- [sceVideoOutOpen](../../../core/libs/prx/libSceVideoOut/src/Output.cpp) (libSceVideoOut) - opening a bus that is already open returns `SCE_VIDEO_OUT_ERROR_RESOURCE_BUSY` (`0x80290009`), as [shadPS4's](https://github.com/shadps4-emu/shadPS4/blob/e0a466753a1aacbc8db8253be685bf7ab4d9daae/src/core/libraries/videoout/driver.cpp#L53-L60) PS4 driver does for its main port; the PS5 result is unverified. PPSA99764 opens the main bus twice and carries on, presenting through the first handle
 - [Overlay output bus](../../../core/libs/prx/libSceVideoOut/src/VideoOutDriver.cpp) (libSceVideoOut) - flips on a port opened with `SCE_VIDEO_OUT_BUS_TYPE_OVERLAY` complete and signal their events like main-bus flips, but their buffers are not shown: the overlay is not composited over the main output. Presenting them as whole frames made the window alternate between the two buses
