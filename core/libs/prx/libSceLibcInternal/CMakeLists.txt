@@ -1,5 +1,4 @@
-add_library(libSceLibcInternal SHARED EXCLUDE_FROM_ALL Export.cpp FileTime.cpp Getopt.cpp UserContext.cpp)
-add_library(libSceLibcInternal SHARED EXCLUDE_FROM_ALL Export.cpp FileTime.cpp SignalList.cpp UserContext.cpp)
+add_library(libSceLibcInternal SHARED EXCLUDE_FROM_ALL Export.cpp FileTime.cpp Getopt.cpp SignalList.cpp UserContext.cpp)
 target_include_directories(libSceLibcInternal PRIVATE ${LIBS_INCLUDE_DIR})
 target_link_libraries(libSceLibcInternal PRIVATE ${CMAKE_DL_LIBS})
 target_sources(libSceLibcInternal PRIVATE Directory.cpp)

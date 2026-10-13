@@ -141,7 +141,7 @@ int APS5_VABI pthread_setaffinity_np_nid_postfix(Pthread thread, std::size_t cpu
     constexpr int GuestEdeadlk = 11;
     if (thread != scePthreadSelf()) {
         if (!thread) return PosixThread::GUEST_EINVAL;
-        if (!IsLiveGuestThread(thread)) return PosixThread::GUEST_ESRCH;
+        if (!GuestThreadIsLive(thread)) return PosixThread::GUEST_ESRCH;
     }
     if (cpusetSize != GUEST_CPUSET_BYTES) return GUEST_ERANGE;
     if (!cpuset) return PosixThread::GUEST_EFAULT;
