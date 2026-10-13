@@ -19,6 +19,7 @@ import unself
 
 CATALOG = "blackbearreloaded/ps5-homebrew-catalog"
 MODULE_DIRS = ("sce_module", "sce_modules", "prx")
+MEDIA_MODULE_DIRS = ("Media/Modules", "Media/Plugins")
 SELF_MAGIC = (b"\x4f\x15\x3d\x1d", b"\x54\x14\xf5\xee")
 STOP = re.compile(r"FAIL:|Failed to load module|NotImplemented|not implemented|terminate called|symbol lookup error|unresolved|Unhandled|exception", re.I)
 NID = re.compile(r"(?<![A-Za-z0-9+\-])[A-Za-z0-9+\-]{11}(?![A-Za-z0-9+\-])")
@@ -72,14 +73,15 @@ def prepare(zip_path, work):
                 continue
             relative = name[len(root):]
             top = relative.split("/", 1)[0]
-            target = work / ("src" if top in MODULE_DIRS else "app0") / relative
+            media_module = relative.rsplit("/", 1)[0] in MEDIA_MODULE_DIRS and relative.lower().endswith(".prx")
+            target = work / ("src" if top in MODULE_DIRS or media_module else "app0") / relative
             if not target.resolve().is_relative_to(work.resolve()):
                 raise ValueError(f"zip entry outside the work folder: {name}")
             if relative.lower() == "eboot.bin":
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             content = z.read(name)
-            if top in MODULE_DIRS and content[:4] in SELF_MAGIC:
+            if (top in MODULE_DIRS or media_module) and content[:4] in SELF_MAGIC:
                 content = unself.unwrap(content)[0]
             target.write_bytes(content)
         data = z.read(eboot)
@@ -163,7 +165,7 @@ def main():
             print(tid, rows[-1]["stop"], flush=True)
             continue
         app = work / ("app.elf" if args.linux else "app.exe")
-        command = [str(args.relinker)] + ([] if args.linux else ["--windows"]) + (["--trap-sdk-syscall-stubs"] if args.trap_sdk_syscall_stubs else []) + ["--rpath", str(args.libs.resolve()).replace("\\", "/"), str(work / "src" / "eboot.elf"), str(app)]
+        command = [str(args.relinker)] + ([] if args.linux else ["--windows"]) + (["--trap-sdk-syscall-stubs"] if args.trap_sdk_syscall_stubs else []) + [a for d in MEDIA_MODULE_DIRS if (work / "src" / d).is_dir() for a in ("--module-dir", d)] + ["--rpath", str(args.libs.resolve()).replace("\\", "/"), str(work / "src" / "eboot.elf"), str(app)]
         relink = subprocess.run(command, cwd=work, capture_output=True, text=True)
         (work / "relink.log").write_text(relink.stdout + relink.stderr)
         if relink.returncode != 0:
