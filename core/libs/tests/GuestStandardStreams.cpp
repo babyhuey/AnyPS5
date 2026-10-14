@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstdarg>
 #include <cstdint>
+#include <string_view>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -429,7 +430,14 @@ static void CheckDescriptorAppend(std::FILE* original) {
     }
 }
 
-int main() {
+static int CheckFailedReopenKeepsHostStream() {
+    Require(freopen_nid_postfix("missing-host-stream-dir/out.log", "w", __stdoutp_nid_postfix) == nullptr);
+    Require(std::fputs("host output\n", stdout) >= 0 && std::fflush(stdout) == 0 && !std::ferror(stdout));
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    if (argc > 1 && std::string_view(argv[1]) == "--failed-reopen") return CheckFailedReopenKeepsHostStream();
     Require(_Getmbcurmax_nid_postfix() == 1 && _Getmbcurmax_nid_postfix() == ___mb_cur_max_nid_postfix());
     CheckFlushWhileReading();
     Require(fdopen_nid_postfix(-1, "rb") == nullptr && *__error_nid_postfix() == 9);
