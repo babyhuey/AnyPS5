@@ -71,6 +71,10 @@ public:
         return _handle;
     }
 
+    bool IsOpen() const {
+        return _handle != nullptr;
+    }
+
     bool IsDynamic() const {
         return _dynamic;
     }

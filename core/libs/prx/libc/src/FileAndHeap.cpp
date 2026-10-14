@@ -428,6 +428,7 @@ void APS5_VABI rewind_nid_postfix(FileStream* stream) {
 
 int APS5_VABI fputs_nid_postfix(const char* str, FileStream* stream) {
     if (!str) throw std::runtime_error("fputs: null string");
+    if (stream && !stream->IsOpen()) { errno = 9; return -1; }
     const int result = std::fputs(str, GetNativeStream(stream));
     stream->SyncStatus();
     return result;
