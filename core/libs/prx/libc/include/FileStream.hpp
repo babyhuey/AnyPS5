@@ -72,6 +72,10 @@ public:
         return _handle;
     }
 
+    bool IsOpen() const {
+        return _handle != nullptr;
+    }
+
     bool IsDynamic() const {
         return _dynamic;
     }
@@ -130,6 +134,7 @@ public:
         return true;
     }
     void SyncStatus() {
+        if (!_handle) return;
         _guest.readRemaining = 0;
         _guest.writeRemaining = 0;
         _guest.flags = static_cast<std::int16_t>((_guest.flags & ~0x60) |
@@ -137,6 +142,7 @@ public:
     }
 
     void SyncUnlockedStatus() {
+        if (!_handle) return;
         _guest.readRemaining = 0;
         _guest.writeRemaining = 0;
 #ifdef _WIN32
@@ -156,6 +162,7 @@ public:
     }
 
     void ClearError() {
+        if (!_handle) return;
         std::clearerr(GetHandle());
         guestError = false;
         SyncStatus();
