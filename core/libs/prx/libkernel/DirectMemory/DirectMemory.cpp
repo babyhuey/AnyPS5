@@ -1432,7 +1432,13 @@ int DoReserveVirtual(void** addr, size_t len, int flags, size_t alignment) {
     }
     if (fixed) mutation.RequireAvailable(*addr, len);
     constexpr int GuestMapNoCoalesce = 0x400000;
-    void* mapped = MapAligned(*addr, len, PROT_NONE, fixed ? GuestMapFixedFlag | (flags & GuestMapNoCoalesce) : 0, alignment);
+    void* mapped = nullptr;
+    try {
+        mapped = MapAligned(*addr, len, PROT_NONE, fixed ? GuestMapFixedFlag | (flags & GuestMapNoCoalesce) : 0, alignment);
+    } catch (const std::exception&) {
+        if (!fixed) throw;
+        return SCE_KERNEL_ERROR_EINVAL;
+    }
     try {
         mutation.Add(mapped, len, false, false, false);
     } catch (...) {

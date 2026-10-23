@@ -1069,6 +1069,19 @@ static void CheckFixedVirtualReservation() {
     Require(sceKernelMunmap(pooled, page * 2) == 0);
 }
 
+static void CheckUnplaceableFixedVirtualReservation() {
+    constexpr std::size_t page = 0x4000;
+    void* const requested = reinterpret_cast<void*>(page);
+    void* reserved = requested;
+    Require(sceKernelReserveVirtualRange(&reserved, page * 2, 0x10, 0) == SCE_KERNEL_ERROR_EINVAL);
+    Require(reserved == requested);
+    VirtualQueryInfo info{};
+    Require(sceKernelVirtualQuery(requested, 0, &info, sizeof(info)) != 0);
+    void* placed = nullptr;
+    Require(sceKernelReserveVirtualRange(&placed, page * 2, 0, 0) == 0 && placed != nullptr);
+    Require(sceKernelMunmap(placed, page * 2) == 0);
+}
+
 static void CheckHintInsideReservation() {
     constexpr std::size_t page = 0x4000;
     void* reserved = nullptr;
@@ -3323,6 +3336,7 @@ int main(int argc, char** argv) {
     CheckHintedVirtualReservation();
     CheckReservationHintWithoutRoomAbove();
     CheckFixedVirtualReservation();
+    CheckUnplaceableFixedVirtualReservation();
     CheckReservedRangeIsNotCommitted();
     CheckHintInsideReservation();
     CheckNoOverwriteRefusesLiveMapping();
