@@ -650,47 +650,65 @@ struct SpinSample {
     std::int64_t reference;
 };
 
-static SpinSample MeasureWorkerSpin(std::uint32_t spin, std::uint32_t rounds, bool pending) {
-    Block block(SizeFor(2, 2, 4, 2, 2));
-    ManagerObject manager;
-    const ConfigParams config{0, 0x10003, 0x10000, 0x2bc, "WorkerSpin", spin, 0, 0, 0};
-    Require(Initialize(manager.storage, block.memory, block.bytes, 2, 2, &config) == 0);
-    auto* factory = Factories(manager.storage, 0);
-    Sequence* held = nullptr;
-    Sequence* pulse = nullptr;
-    Require(factory->Create(&held, 4, 4, 2, 2, "held worker") == 0);
-    Require(factory->Create(&pulse, 4, 4, 2, 2, "idle worker") == 0);
-    HeldWorker worker;
-    Require(held->Dispatch(HoldWorker, &worker, 1, nullptr) == 0);
-    worker.started.wait(false);
-    if (pending) {
-        Require(held->SyncPoint() == 0);
-        Require(held->Dispatch(Nothing, nullptr, 1, nullptr) == 0);
+struct SpinRig {
+    SpinRig(std::uint32_t spin, bool pending) : block(SizeFor(2, 2, 4, 2, 2)) {
+        const ConfigParams config{0, 0x10003, 0x10000, 0x2bc, "WorkerSpin", spin, 0, 0, 0};
+        Require(Initialize(manager.storage, block.memory, block.bytes, 2, 2, &config) == 0);
+        factory = Factories(manager.storage, 0);
+        Require(factory->Create(&held, 4, 4, 2, 2, "held worker") == 0);
+        Require(factory->Create(&pulse, 4, 4, 2, 2, "idle worker") == 0);
+        Require(held->Dispatch(HoldWorker, &worker, 1, nullptr) == 0);
+        worker.started.wait(false);
+        if (pending) {
+            Require(held->SyncPoint() == 0);
+            Require(held->Dispatch(Nothing, nullptr, 1, nullptr) == 0);
+        }
+        Require(pulse->Dispatch(CaptureSpinClock, &clock, 1, nullptr) == 0 && pulse->Wait() == 0);
+        RequireParked(clock.guest);
     }
-    SpinClock clock;
-    Require(pulse->Dispatch(CaptureSpinClock, &clock, 1, nullptr) == 0 && pulse->Wait() == 0);
-    RequireParked(clock.guest);
-    const auto before = SpinCpuUnits(clock);
-    for (std::uint32_t round = 0; round < rounds; ++round) {
+
+    void Start() { before = SpinCpuUnits(clock); }
+
+    void Pulse() {
         Require(pulse->Dispatch(Nothing, nullptr, 1, nullptr) == 0 && pulse->Wait() == 0);
         Require(sceKernelUsleep_nid_postfix(1000) == 0);
     }
-    const auto consumed = SpinCpuUnits(clock) - before;
-    RequireParked(clock.guest);
-    Require(!worker.release);
-    worker.release = true;
-    worker.release.notify_one();
-    Require(held->Wait() == 0);
-    Require(factory->Destroy(held) == 0 && factory->Destroy(pulse) == 0);
-    Require(Shutdown(manager.storage) == 0);
-    return {consumed, clock.reference};
-}
+
+    SpinSample Finish() {
+        const auto consumed = SpinCpuUnits(clock) - before;
+        RequireParked(clock.guest);
+        Require(!worker.release);
+        worker.release = true;
+        worker.release.notify_one();
+        Require(held->Wait() == 0);
+        Require(factory->Destroy(held) == 0 && factory->Destroy(pulse) == 0);
+        Require(Shutdown(manager.storage) == 0);
+        return {consumed, clock.reference};
+    }
+
+    Block block;
+    ManagerObject manager;
+    SequenceFactory* factory = nullptr;
+    Sequence* held = nullptr;
+    Sequence* pulse = nullptr;
+    HeldWorker worker;
+    SpinClock clock;
+    std::int64_t before = 0;
+};
 
 static void WorkerSpinCase() {
     constexpr std::uint32_t rounds = 512;
-    const auto parked = MeasureWorkerSpin(0, rounds, true);
-    const auto spinning = MeasureWorkerSpin(50, rounds, true);
-    const auto noPending = MeasureWorkerSpin(50, rounds, false);
+    SpinRig parkedRig(0, true);
+    SpinRig spinningRig(50, true);
+    SpinRig noPendingRig(50, false);
+    const std::array<SpinRig*, 3> rigs{&parkedRig, &spinningRig, &noPendingRig};
+    for (auto* rig : rigs) rig->Start();
+    for (std::uint32_t round = 0; round < rounds; ++round) {
+        for (std::size_t index = 0; index < rigs.size(); ++index) rigs[(round + index) % rigs.size()]->Pulse();
+    }
+    const auto parked = parkedRig.Finish();
+    const auto spinning = spinningRig.Finish();
+    const auto noPending = noPendingRig.Finish();
 #ifdef _WIN32
     constexpr const char* units = "cycles";
 #else
